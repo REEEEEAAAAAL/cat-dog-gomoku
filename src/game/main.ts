@@ -3,7 +3,7 @@ import { avatar } from './avatars';
 import { login, send } from './api';
 import { clockText, createId } from './rules';
 import type { Point } from './rules';
-import { errorMessage, reactions } from './protocol';
+import { errorMessage, reactions, RpcError } from './protocol';
 import type { Action, Command, Reaction, Reply, Snapshot } from './protocol';
 
 const el = (id: string) => document.getElementById(id)!;
@@ -11,14 +11,13 @@ const button = (id: string) => el(id) as HTMLButtonElement;
 const input = (id: string) => el(id) as HTMLInputElement;
 const client = createId();
 const roomPattern = /^(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[a-f0-9]{10})$/i;
-const storedRoom = localStorage.getItem('gomoku.room') || '';
+let storedRoom = localStorage.getItem('gomoku.room') || '';
 const invitation = location.hash.slice(1);
 let animal: 'dog' | 'cat' = 'dog';
 let room = '';
 let snapshot: Snapshot | null = null;
 let pending = false;
-let pendingName = '';
-let pendingAutoName = true;
+let applicationId: string | null = null;
 let busy = false;
 let polling = false;
 let connected = false;
@@ -34,6 +33,36 @@ const seenReactions = new Set<string>();
 const bubbles = new Map<number, { reaction: Reaction; until: number }>();
 let undoTarget = '';
 let undoProposal: Pick<Snapshot, 'version' | 'gameId'> | null = null;
+
+function forgetRoom(target = room) {
+  if (storedRoom === target) { storedRoom = ''; localStorage.removeItem('gomoku.room'); }
+}
+
+function home() {
+  epoch++; room = ''; pending = false; snapshot = null; connected = false; superseded = false;
+  selection = null; uncertain = null; applicationId = null; bubbles.clear(); seenReactions.clear();
+  document.querySelectorAll<HTMLDialogElement>('dialog').forEach(dialog => dialog.close());
+  history.replaceState(null, '', location.pathname); el('copyFallback').hidden = true;
+  el('entryTitle').textContent = '今天，你是谁？'; render();
+}
+
+function failure(error: unknown) {
+  const wasPending = pending;
+  connected = false; selection = null;
+  const message = error instanceof Error ? error.message : '连接失败，稍后会自动重试';
+  superseded = error instanceof RpcError && error.code === 'superseded';
+  const terminal = error instanceof RpcError && ['not_found', 'expired', 'room_full', 'room_closed', 'forbidden',
+    'application_pending', 'invalid_name', 'create_limit'].includes(error.code);
+  if (terminal && (!uncertain || ['not_found', 'expired', 'room_closed'].includes(error.code))) {
+    if (['not_found', 'expired', 'room_closed'].includes(error.code)) {
+      forgetRoom(); sessionStorage.removeItem(`gomoku.operation.${room}`);
+    }
+    home();
+    notice(wasPending && error.code === 'forbidden' ? '加入申请已结束。如需加入，请重新申请。' : message, true);
+    return;
+  }
+  notice(uncertain ? `${message}。上次操作结果未知，请重试核对，避免重复落子。` : message, true);
+}
 
 function notice(message: string, error = false) {
   if (lastStatus !== message) { el('notice').textContent = message; lastStatus = message; }
@@ -65,7 +94,7 @@ function renderClock() {
     el('undoCountdown').textContent = `等待回应 ${clockText(s.undoRequest.expiresAt - now)}`;
     if (s.offlineDeadline === null) el('turnHint').textContent = '悔棋协商中，计时已暂停';
   }
-  if (performance.now() - lastReceiptAt >= 15000 && connected) {
+  if (s.phase !== 'closed' && performance.now() - lastReceiptAt >= 15000 && connected) {
     connected = false; selection = null; render(); notice('正在重新同步，暂时不能落子', true);
   }
   for (const [seat, bubble] of bubbles) {
@@ -82,7 +111,7 @@ function playerElements(s: Snapshot) {
     node.className = `player ${s.phase === 'running' && s.turnSeat === seat ? 'active' : ''}`;
     node.innerHTML = `${avatar(p.animal)}<div class="player-info"><span class="player-name"></span><span class="player-detail"><i class="color-dot ${s.blackSeat === seat ? '' : 'white'}"></i><span></span></span></div>`;
     node.querySelector('.player-name')!.textContent = p.name ? `${p.name}${seat === s.seat ? '（你）' : '（对方）'}` : '等待对方入座';
-    node.querySelector('.player-detail span')!.textContent = `${s.blackSeat === seat ? '黑棋' : '白棋'} · ${!p.name ? '未加入' : !p.online ? '离线' : !p.synced ? '同步中' : p.ready ? '已准备' : '在线'} · 悔棋 ${p.undoLeft} 次`;
+    node.querySelector('.player-detail span')!.textContent = `${s.blackSeat === seat ? '黑棋' : '白棋'} · ${!p.name ? '未加入' : !p.online ? '离线' : !p.synced ? '同步中' : p.ready ? '已准备' : '在线'} · 悔棋：剩余${p.undoLeft}次`;
     const bubble = bubbles.get(seat);
     if (bubble && performance.now() < bubble.until) {
       const emoji = document.createElement('span'); emoji.className = 'reaction-bubble';
@@ -114,19 +143,21 @@ function renderBoard() {
 }
 
 function render() {
-  el('home').hidden = !(!room);
+  el('home').hidden = !!room;
   el('room').hidden = !room;
   const s = snapshot;
   document.querySelector<HTMLElement>('.play-area')!.hidden = pending || !s;
   el('pendingPanel').hidden = !pending;
-  el('lobbyPanel').hidden = !s;
+  el('lobbyPanel').hidden = !s || s.phase === 'running' || s.phase === 'paused';
   el('invitePanel').hidden = !s || s.phase === 'closed';
   el('applicationPanel').hidden = !s?.application;
-  button('reconnect').hidden = !room || busy || (connected && !superseded);
+  button('reconnect').hidden = !room || busy || s?.phase === 'closed' || (connected && !superseded);
   button('retry').hidden = !uncertain || busy;
   button('create').disabled = busy;
   button('join').disabled = busy;
   button('resume').hidden = !roomPattern.test(storedRoom);
+  button('cancelApplication').disabled = busy;
+  button('homeReturn').hidden = !s || s.phase !== 'closed';
   button('leave').hidden = !s || s.phase === 'closed';
   if (!s) return;
   el('round').textContent = String(s.round).padStart(2, '0');
@@ -187,9 +218,13 @@ function render() {
 
 function apply(reply: Reply) {
   const wasConnected = connected;
-  connected = true; superseded = false;
-  if (reply.pending) { pending = true; snapshot = null; room = reply.room; render(); return; }
+  if (reply.pending) {
+    if (reply.withdrawn) return;
+    connected = true; superseded = false; pending = true; applicationId = reply.applicationId;
+    snapshot = null; room = reply.room; render(); return;
+  }
   if (snapshot && (reply.version < snapshot.version || reply.serverNow < snapshot.serverNow)) return;
+  connected = true; superseded = false;
   if (snapshot?.gameId !== reply.gameId || snapshot.moves.length !== reply.moves.length || reply.phase !== 'running') selection = null;
   if (snapshot?.gameId !== reply.gameId) bubbles.clear();
   for (const event of reply.emojis) {
@@ -201,7 +236,8 @@ function apply(reply: Reply) {
   if (seenReactions.size > 100) { seenReactions.clear(); reply.emojis.forEach(e => seenReactions.add(e.id)); }
   snapshot = reply; pending = false; room = reply.room;
   serverAtReceipt = reply.serverNow; lastReceiptAt = performance.now();
-  localStorage.setItem('gomoku.room', room);
+  if (reply.phase === 'closed') forgetRoom(reply.room);
+  else { storedRoom = room; localStorage.setItem('gomoku.room', room); }
   history.replaceState(null, '', `#${room}`);
   render();
 }
@@ -229,12 +265,8 @@ async function run(work: () => Promise<void>) {
   if (busy) return;
   busy = true; render();
   try { await work(); }
-  catch (error) {
-    connected = false; selection = null;
-    const message = error instanceof Error ? error.message : '连接失败，稍后会自动重试';
-    superseded = message === errorMessage('superseded');
-    notice(uncertain ? `${message}。上次操作结果未知，请重试核对，避免重复落子。` : message, true);
-  } finally { busy = false; render(); }
+  catch (error) { failure(error); }
+  finally { busy = false; render(); }
 }
 
 function recoverUncertain() {
@@ -269,29 +301,42 @@ async function mutate(action: Action, data: Record<string, unknown> = {}, retry 
 }
 
 async function connect(action: 'create' | 'apply' | 'connect', target: string) {
-  epoch++; room = target; snapshot = null; pending = false; connected = false; selection = null; uncertain = null;
+  epoch++; room = target; snapshot = null; pending = false; applicationId = null;
+  connected = false; selection = null; uncertain = null;
   notice('正在连接你们的棋桌…');
   await login();
   const name = input('nickname').value.trim();
-  pendingName = name || '朋友'; pendingAutoName = !name;
   const data = action === 'create' ? { name: name || (animal === 'dog' ? '狗狗' : '猫猫'), animal }
-    : action === 'apply' ? { name: pendingName, autoName: pendingAutoName } : {};
+    : action === 'apply' ? { name: name || '朋友', autoName: !name } : {};
   await exchange(command(action, data)); await synchronize(); recoverUncertain();
   notice(pending ? '申请已送达，等房主确认。' : uncertain ? '已恢复棋盘，请重试上次操作以核对结果。' : '连接正常。');
 }
 
+async function refreshRoom() {
+  const active = epoch;
+  try { await exchange(command('snapshot')); }
+  catch (error) {
+    if (active !== epoch) return;
+    if (!(error instanceof RpcError) || error.code !== 'connect_required') throw error;
+    await exchange(command('connect'));
+  }
+  if (active === epoch) await synchronize();
+}
+
+function connectionStatus() {
+  if (connected) notice(snapshot?.phase === 'closed' ? '房间已关闭。' : pending ? '申请已送达，等房主确认。' : '连接正常。');
+}
+
 async function poll() {
-  if (!room || busy || polling || document.hidden || superseded) return;
+  if (!room || busy || polling || document.hidden || superseded || snapshot?.phase === 'closed') return;
+  const active = epoch;
   polling = true;
   try {
-    await exchange(command(pending ? 'apply' : 'snapshot', pending ? { name: pendingName, autoName: pendingAutoName } : {}));
-    await synchronize();
-    if (connected) notice(pending ? '申请已送达，等房主确认。' : '连接正常。');
+    await refreshRoom();
+    if (active !== epoch) return;
+    connectionStatus();
   } catch (error) {
-    connected = false; selection = null;
-    const message = error instanceof Error ? error.message : '连接失败，稍后会自动重试';
-    superseded = message === errorMessage('superseded');
-    notice(message, true);
+    if (active === epoch) failure(error);
   } finally { polling = false; render(); }
 }
 
@@ -344,7 +389,10 @@ el('joinForm').onsubmit = event => {
   void run(() => connect('apply', target));
 };
 button('resume').onclick = () => { void run(() => connect('connect', storedRoom)); };
-button('reconnect').onclick = () => { void run(() => connect(pending ? 'apply' : 'connect', room)); };
+button('reconnect').onclick = () => { void run(async () => {
+  if (pending) { await login(); await refreshRoom(); }
+  else await connect('connect', room);
+}); };
 button('retry').onclick = () => { void run(async () => { if (!connected) { await login(); await exchange(command('connect')); await synchronize(); } await mutate('move', {}, true); }); };
 button('ready').onclick = () => { void run(() => mutate('ready')); };
 button('rematch').onclick = () => { void run(() => mutate('rematch')); };
@@ -361,7 +409,7 @@ button('undo').onclick = () => { void run(async () => {
   const move = snapshot.moves[index]; undoTarget = move.id ?? `legacy-${index}`;
   undoProposal = { version: snapshot.version, gameId: snapshot.gameId };
   const seconds = Math.ceil(Math.min(60000, Math.max(15000, move.remainingMs ?? 60000)) / 1000);
-  el('undoPreview').textContent = `对方同意后，撤销最近 ${snapshot.moves.length - index} 颗棋子，由你重新落子，恢复 ${seconds} 秒。本局还可成功悔棋 ${snapshot.players[snapshot.seat - 1].undoLeft} 次。`;
+  el('undoPreview').textContent = `对方同意后，撤销最近 ${snapshot.moves.length - index} 颗棋子，由你重新落子，恢复 ${seconds} 秒。本局悔棋剩余${snapshot.players[snapshot.seat - 1].undoLeft}次。`;
   undoDialog.showModal();
 }); };
 button('dismissUndo').onclick = () => undoDialog.close();
@@ -375,7 +423,15 @@ for (const [id, emoji] of Object.entries(reactions)) {
   node.setAttribute('aria-label', `发送${reactionNames[id as Reaction]}表情`); node.dataset.emoji = id;
   node.onclick = () => { void run(() => mutate('emoji', { emoji: id })); }; el('reactions').appendChild(node);
 }
-button('cancelApplication').onclick = () => { epoch++; room = ''; pending = false; snapshot = null; connected = false; history.replaceState(null, '', location.pathname); render(); };
+button('cancelApplication').onclick = () => { void run(async () => {
+  try {
+    await exchange(command('withdraw', { application: applicationId })); home(); notice('已撤回加入申请。');
+  } catch (error) {
+    if (!(error instanceof RpcError) || error.code !== 'application_changed') throw error;
+    await refreshRoom(); notice('房主已确认加入，房间已恢复。');
+  }
+}); };
+button('homeReturn').onclick = () => { home(); notice('房间已关闭，可以重新创建或加入。'); };
 button('invite').onclick = () => {
   const link = `${location.origin}${location.pathname}#${room}`;
   void navigator.clipboard?.writeText(link).then(() => notice('邀请链接已复制，发给对方就好。')).catch(() => {
@@ -390,7 +446,7 @@ button('confirmLeave').onclick = () => {
   leaveDialog.close();
   void run(async () => {
     await mutate('leave');
-    if (snapshot?.phase === 'closed') { localStorage.removeItem('gomoku.room'); notice('房间已关闭，点击左上角返回首页。'); }
+    if (snapshot?.phase === 'closed') notice('房间已关闭。');
   });
 };
 window.addEventListener('offline', () => { connected = false; selection = null; notice('网络已断开，恢复后会自动同步', true); render(); });

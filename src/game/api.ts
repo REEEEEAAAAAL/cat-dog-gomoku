@@ -1,6 +1,6 @@
 import cloudbase from '@cloudbase/js-sdk';
 import { fetchJsonWithTimeout } from '../../diagnostics/cloudbase/http';
-import { errorMessage, isReply } from './protocol';
+import { isReply, rpcError } from './protocol';
 import type { Command, Reply } from './protocol';
 
 const env = import.meta.env.VITE_CLOUDBASE_ENV_ID as string | undefined;
@@ -27,10 +27,7 @@ export async function send(command: Command): Promise<Reply> {
     body: JSON.stringify(command),
   }, 10_000);
   if (!response.ok) {
-    const message = body && typeof body === 'object' && 'message' in body && typeof body.message === 'string' ? body.message : '';
-    const code = Object.keys({ not_found: 1, expired: 1, room_full: 1, forbidden: 1, unauthorized: 1, application_pending: 1,
-      invalid_name: 1, superseded: 1, room_closed: 1, create_limit: 1, protocol_mismatch: 1 }).find(code => message.includes(code));
-    throw new Error(code ? errorMessage(code) : '连接失败，请检查网络后重试');
+    throw rpcError(body);
   }
   if (!isReply(body)) throw new Error('返回数据不完整，请刷新重试');
   return body;

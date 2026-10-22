@@ -7,12 +7,12 @@ The active backend is CloudBase PostgreSQL HTTP RPC. Visible pages poll every fi
 ## Play
 
 1. Choose an identity and optionally enter a nickname, then create a room.
-2. Send the invitation link or ten-character room code to your partner. The host approves the joining player.
+2. Send the invitation link or ten-character room code to your partner. The host approves the joining player. Pending players can withdraw; a rejected request requires a new explicit application.
 3. Both players select the ready button. Black plays first; initial colors are random.
 4. On a phone, tap an intersection to preview, then confirm. Mouse clicks place directly. Arrow keys select a point; Enter previews, and the confirmation button submits.
 5. Five or more connected stones win. A full board without a winning line is a draw. Both players must request another round; colors then swap while animal identities stay the same.
 
-Your partner appears above the board, and you appear below it. The server allows 60 seconds per turn. Missing heartbeats pause play and preserve the remaining time; both players must reconnect and acknowledge synchronization within five minutes. Otherwise the round ends without a winner. Settlement is lazy on the next RPC when both players are absent. Refresh restores the room using the browser's native anonymous session. New tabs take over that browser's seat; the old tab is disabled. Explicitly leaving closes the room for both players. Rooms expire after 24 hours.
+Your partner appears above the board, and you appear below it. The server allows 60 seconds per turn. Missing heartbeats pause play and preserve the remaining time; both players must reconnect and acknowledge synchronization within five minutes. Otherwise the round ends without a winner. Settlement is lazy on the next RPC when both players are absent. Refresh restores the room using the browser's native anonymous session. New tabs take over that browser's seat; the old tab is disabled. Explicitly leaving closes the room for both players. Invalid, expired and closed rooms stop making automatic requests; a closed room is removed from the resume shortcut. Rooms expire after 24 hours.
 
 ## Develop and verify
 

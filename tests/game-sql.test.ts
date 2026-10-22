@@ -48,6 +48,8 @@ beforeAll(async () => {
   await db.exec(migration.replaceAll('clock_timestamp()', 'public.test_now()'));
   const extras = await readFile('cloudbase/migrations/20261023020000_undo_and_reactions.sql', 'utf8');
   await db.exec(extras.replaceAll('clock_timestamp()', 'public.test_now()'));
+  const lifecycle = await readFile('cloudbase/migrations/20261023030000_application_lifecycle.sql', 'utf8');
+  await db.exec(lifecycle.replaceAll('clock_timestamp()', 'public.test_now()'));
 });
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
@@ -77,6 +79,47 @@ describe('game RPC on isolated PostgreSQL with controlled server clock', () => {
     await expect(db.query('SELECT * FROM public.gomoku_rooms')).rejects.toThrow('permission denied');
     await expect(db.query('UPDATE public.gomoku_rooms SET version=900')).rejects.toThrow('permission denied');
     expect((await call('snapshot')).pending).toBe(false);
+  });
+  it('reads a pending application without modifying its ID or recreating a rejected request', async () => {
+    await as(2); const applied = await call('apply', { name: '猫猫' });
+    expect(applied.pending).toBe(true);
+    if (!applied.pending) throw new Error('Expected an application');
+    for (let i = 0; i < 3; i++) expect(await call('snapshot')).toMatchObject({ pending: true, applicationId: applied.applicationId });
+    await as(1); await call('snapshot'); const version = current.version;
+    await call('reject', { application: applied.applicationId }); expect(current.version).toBe(version + 1);
+    await as(2); await expect(call('snapshot')).rejects.toThrow('forbidden');
+    await as(1); await call('snapshot'); expect(current.application).toBeNull();
+  });
+  it('withdraws idempotently and does not erase another visitor application', async () => {
+    await as(2); const applied = await call('apply', { name: '猫猫' });
+    if (!applied.pending) throw new Error('Expected an application');
+    const data = { application: applied.applicationId };
+    expect(await call('withdraw', data)).toMatchObject({ pending: true, withdrawn: true, applicationId: null });
+    expect(await call('withdraw', data)).toMatchObject({ withdrawn: true });
+    await user('third'); const third = await call('apply', { name: '第三位' });
+    await as(2); await call('withdraw', data);
+    await as(1); await call('snapshot');
+    expect(current.application?.name).toBe('第三位');
+    if (!third.pending) throw new Error('Expected an application');
+    expect(current.application?.id).toBe(third.applicationId);
+  });
+  it('rejects a stale withdrawal after the same visitor explicitly reapplies', async () => {
+    await as(2); const first = await call('apply', { name: '猫猫' });
+    if (!first.pending) throw new Error('Expected an application');
+    await as(1); await call('snapshot'); await call('reject', { application: first.applicationId });
+    await as(2); const next = await call('apply', { name: '猫猫' });
+    if (!next.pending) throw new Error('Expected an application');
+    await expect(call('withdraw', { application: first.applicationId })).rejects.toThrow('application_changed');
+    expect((await call('snapshot'))).toMatchObject({ applicationId: next.applicationId });
+  });
+  it('keeps an approved seat during a withdrawal race and requires an explicit control connection', async () => {
+    await as(2); const applied = await call('apply', { name: '猫猫' });
+    if (!applied.pending) throw new Error('Expected an application');
+    await as(1); await call('snapshot'); await call('approve', { application: applied.applicationId });
+    await as(2); await expect(call('withdraw', { application: applied.applicationId })).rejects.toThrow('application_changed');
+    await expect(call('snapshot')).rejects.toThrow('connect_required');
+    await call('connect'); await sync(); expect(current.seat).toBe(2); expect(current.players[1].synced).toBe(true);
+    await user('third'); await expect(call('apply', { name: '第三位' })).rejects.toThrow('room_full');
   });
   it('starts only after both players are ready, online and synchronized', async () => {
     expect(current.phase).toBe('waiting'); await start();

@@ -2,13 +2,13 @@ import type { Move, Point, Seat } from './rules';
 
 export type Phase = 'waiting' | 'running' | 'paused' | 'finished' | 'closed';
 export type Action = 'create' | 'apply' | 'connect' | 'snapshot' | 'sync' | 'approve' | 'reject' | 'ready' | 'move' | 'rematch' | 'leave'
-  | 'undo_request' | 'undo_respond' | 'undo_cancel' | 'emoji';
+  | 'undo_request' | 'undo_respond' | 'undo_cancel' | 'emoji' | 'withdraw';
 export const reactions = { plead: '🥺', cat: '😼', dog: '🐶', heart: '❤️', laugh: '😂', cry: '😭', angry: '😤', celebrate: '🎉' } as const;
 export type Reaction = keyof typeof reactions;
 export interface ReactionEvent { id: string; seat: Seat; emoji: Reaction; at: number }
 export interface UndoRequest { id: string; seat: Seat; target: string; removeCount: 1 | 2; restoreMs: number; expiresAt: number }
 export interface Player { name: string; animal: 'dog' | 'cat'; ready: boolean; online: boolean; synced: boolean; undoLeft: number }
-export interface Pending { pending: true; room: string; code: string; serverNow: number }
+export interface Pending { pending: true; room: string; code: string; serverNow: number; applicationId: string | null; withdrawn?: boolean }
 export interface Snapshot {
   pending: false;
   room: string;
@@ -61,7 +61,7 @@ const player = (value: unknown): value is Player => object(value) && typeof valu
 
 export function isReply(value: unknown): value is Reply {
   if (!object(value) || typeof value.room !== 'string' || typeof value.code !== 'string' || !number(value.serverNow)) return false;
-  if (value.pending === true) return true;
+  if (value.pending === true) return value.withdrawn === true ? value.applicationId === null : typeof value.applicationId === 'string';
   return value.pending === false && seat(value.seat) && number(value.version) && typeof value.gameId === 'string'
     && number(value.round) && ['waiting', 'running', 'paused', 'finished', 'closed'].includes(String(value.phase))
     && seat(value.blackSeat) && seat(value.turnSeat) && Array.isArray(value.moves) && value.moves.length <= 225
@@ -96,7 +96,18 @@ const messages: Record<string, string> = {
   undo_target_changed: '最近棋步已变化，请重新核对悔棋范围', undo_already_requested: '这一步已经申请过悔棋，请继续对局',
   undo_cooldown: '请等上次申请满 30 秒后再试', undo_expired: '悔棋申请已结束或过期',
   invalid_emoji: '请选择提供的表情', emoji_rate_limit: '表情发得太快啦，稍等一下',
+  connect_required: '正在同步房间身份',
 };
 export function errorMessage(code: string): string {
   return messages[code] ?? '服务端未确认操作，请重试连接';
+}
+
+export class RpcError extends Error {
+  constructor(readonly code: string) { super(errorMessage(code)); this.name = 'RpcError'; }
+}
+
+export function rpcError(body: unknown): RpcError {
+  const message = object(body) && typeof body.message === 'string' ? body.message : '';
+  const code = Object.keys(messages).find(code => message.split(/[^a-z_]+/).includes(code));
+  return new RpcError(code ?? 'unavailable');
 }
