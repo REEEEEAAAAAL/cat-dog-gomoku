@@ -191,7 +191,14 @@ test('mutual undo, exact impact, emoji delivery while paused and refreshed reque
   try {
     const black = game.state().blackSeat === 1 ? a : b;
     const white = black === a ? b : a;
-    await play(black, 7, 7, black === b); await play(white, 8, 8, white === b);
+    await play(black, 7, 7, black === b);
+    await expect(black.locator('#undo')).toBeEnabled(); await black.locator('#undo').click();
+    await expect(black.locator('#undoPreview')).toContainText('最近 1 颗');
+    await play(white, 8, 8, white === b);
+    await expect(black.locator('#board .stone:not(.preview)')).toHaveCount(2);
+    await black.locator('#requestUndo').click();
+    await expect(black.locator('#notice')).toContainText('状态已更新');
+    await expect(black.locator('#undoPanel')).toBeHidden();
     await expect(black.locator('#undo')).toBeEnabled(); await black.locator('#undo').click();
     await expect(black.locator('#undoPreview')).toContainText('最近 2 颗');
     await black.locator('#requestUndo').click();

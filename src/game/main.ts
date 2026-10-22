@@ -33,6 +33,7 @@ const cells: HTMLButtonElement[] = [];
 const seenReactions = new Set<string>();
 const bubbles = new Map<number, { reaction: Reaction; until: number }>();
 let undoTarget = '';
+let undoProposal: Pick<Snapshot, 'version' | 'gameId'> | null = null;
 
 function notice(message: string, error = false) {
   if (lastStatus !== message) { el('notice').textContent = message; lastStatus = message; }
@@ -247,9 +248,11 @@ function recoverUncertain() {
   } catch { notice('上次操作记录无法读取，请核对棋盘后继续', true); }
 }
 
-async function mutate(action: Action, data: Record<string, unknown> = {}, retry = false, rebase = true) {
+async function mutate(action: Action, data: Record<string, unknown> = {}, retry = false, rebase = true,
+  expected: Pick<Snapshot, 'version' | 'gameId'> | null = null) {
   if (!snapshot || (!retry && uncertain)) return;
-  const request = retry && uncertain ? { ...uncertain, p_client: client } : { ...command(action, data), p_operation: createId() };
+  const request = retry && uncertain ? { ...uncertain, p_client: client } : { ...command(action, data), p_operation: createId(),
+    ...(expected ? { p_version: expected.version, p_game: expected.gameId } : {}) };
   uncertain = request;
   sessionStorage.setItem(`gomoku.operation.${room}`, JSON.stringify(request));
   const reply = await exchange(request);
@@ -350,17 +353,19 @@ button('reject').onclick = () => { void run(() => mutate('reject', { application
 button('confirm').onclick = () => { if (selection && canMove()) { const point = selection; void run(() => mutate('move', { x: point.x, y: point.y })); } };
 button('cancel').onclick = () => { selection = null; render(); };
 const undoDialog = el('undoDialog') as HTMLDialogElement;
-button('undo').onclick = () => {
-  if (!snapshot) return;
+button('undo').onclick = () => { void run(async () => {
+  await exchange(command('snapshot')); await synchronize();
+  if (!snapshot || snapshot.phase !== 'running') return;
   const index = snapshot.moves.findLastIndex(m => m.seat === snapshot!.seat);
   if (index < 0) return;
   const move = snapshot.moves[index]; undoTarget = move.id ?? `legacy-${index}`;
+  undoProposal = { version: snapshot.version, gameId: snapshot.gameId };
   const seconds = Math.ceil(Math.min(60000, Math.max(15000, move.remainingMs ?? 60000)) / 1000);
   el('undoPreview').textContent = `对方同意后，撤销最近 ${snapshot.moves.length - index} 颗棋子，由你重新落子，恢复 ${seconds} 秒。本局还可成功悔棋 ${snapshot.players[snapshot.seat - 1].undoLeft} 次。`;
   undoDialog.showModal();
-};
+}); };
 button('dismissUndo').onclick = () => undoDialog.close();
-button('requestUndo').onclick = () => { undoDialog.close(); void run(() => mutate('undo_request', { target: undoTarget })); };
+button('requestUndo').onclick = () => { undoDialog.close(); void run(() => mutate('undo_request', { target: undoTarget }, false, true, undoProposal)); };
 button('acceptUndo').onclick = () => { void run(() => mutate('undo_respond', { request: snapshot?.undoRequest?.id, accept: true })); };
 button('denyUndo').onclick = () => { void run(() => mutate('undo_respond', { request: snapshot?.undoRequest?.id, accept: false })); };
 button('cancelUndo').onclick = () => { void run(() => mutate('undo_cancel', { request: snapshot?.undoRequest?.id })); };

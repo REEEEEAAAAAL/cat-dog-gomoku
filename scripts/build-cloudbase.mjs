@@ -6,4 +6,4 @@ await mkdir(out,{recursive:true});
 for(const file of await readdir('cloudbase/migrations')){
   if(file.endsWith('.sql'))await copyFile(`cloudbase/migrations/${file}`,`${out}/${file}`);
 }
-stdout.write('CloudBase candidate packaged locally. No cloud resources were contacted or deployed.\n');
+stdout.write('CloudBase game, diagnostics and migrations packaged locally. No deployment was performed.\n');

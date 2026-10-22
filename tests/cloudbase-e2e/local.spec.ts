@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test';
 
-test('idle candidate stays local, explains its limits and fits phone screens',async({page})=>{
+test('idle candidate stays local, explains its limits and fits phone screens',async({page,baseURL})=>{
   test.skip(!!process.env.CLOUDBASE_DIAGNOSTIC_URL);
   const external:string[]=[];const errors:string[]=[];
   page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/*',async route=>{
-    if(!route.request().url().startsWith('http://127.0.0.1:18789/')){external.push(new URL(route.request().url()).origin);await route.abort();}
+    if(new URL(route.request().url()).origin!==new URL(baseURL!).origin){external.push(new URL(route.request().url()).origin);await route.abort();}
     else await route.continue();
   });
   await page.goto('/');await expect(page.locator('#status')).toContainText(/尚未配置云端环境|请新建测试或打开邀请链接加入/);
