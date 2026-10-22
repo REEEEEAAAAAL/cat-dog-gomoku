@@ -83,6 +83,12 @@ tcb hosting deploy ./dist/cloudbase/site gomoku-diag --env-id YOUR_EXISTING_ENV_
 
 An older Cloudflare Workers and SQLite Durable Objects candidate remains under `src/worker/`, `src/shared/` and the legacy client. Its scripts have the `:legacy-cloudflare` suffix and are not the active deployment path.
 
-Undo, reactions and QR invitations are deferred. There is no AI opponent, matchmaking, spectator mode, chat or payment integration.
+## Undo and reactions
+
+Each player may successfully undo twice per round. A request removes their most recent stone, plus the opponent's reply if already played. Both players see the exact impact and restored time before approval. Requests pause the game for up to 30 seconds; rejection, cancellation or expiry preserves the original remaining time and consumes no use. Approval restores the requester's saved pre-move budget, clamped to 15–60 seconds. Requests have a 30-second cooldown and cannot be repeated for the same move. Detected disconnects cancel negotiation and retain the disconnect pause.
+
+Eight fixed reactions are available beside player information. The server permits one per two seconds and at most ten per minute per player. Reactions arrive with polling, display for about 1.5 seconds, do not affect game timing, and are not replayed on reconnect. Invitations use links and room codes.
+
+There is no AI opponent, matchmaking, spectator mode, chat or payment integration.
 
 Never commit secrets, cookies, local environment files or internal acceptance records. `docs/internal/`, `.cloudbase/` and `.env.local` stay ignored. Follow `AGENTS.md` for development and authorization boundaries.

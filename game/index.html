@@ -29,8 +29,10 @@
             <div class="board-wrap"><div id="board" class="board" role="grid" aria-label="15 乘 15 五子棋棋盘"></div><svg id="boardLines" viewBox="0 0 15 15" aria-hidden="true"></svg><svg id="winOverlay" viewBox="0 0 15 15" aria-hidden="true"></svg></div>
             <div id="selfPlayer" class="players self-player"></div>
             <div class="move-controls"><span id="selectionHint">手机点选交叉点，再确认落子</span><div><button id="cancel" class="text-button" disabled>取消</button><button id="confirm" class="primary" disabled>确认落子</button></div></div>
+            <div class="interaction-controls"><button id="undo" disabled>申请悔棋</button><div id="reactions" class="reactions" role="group" aria-label="发送表情"></div></div>
           </div>
           <aside class="room-aside">
+            <div id="undoPanel" class="aside-block undo-panel" hidden><h2>戳戳，可以让我悔一步嘛？🥺</h2><p id="undoImpact"></p><p id="undoCountdown"></p><div class="button-row"><button id="acceptUndo" class="primary">同意悔棋</button><button id="denyUndo">不悔啦</button><button id="cancelUndo">取消申请</button></div></div>
             <div id="pendingPanel" class="aside-block" hidden><h2>等房主确认</h2><p>加入申请已送达，确认后就能看到棋盘。</p><button id="cancelApplication" class="text-button">返回首页</button></div>
             <div id="applicationPanel" class="aside-block" hidden><h2>有人来啦</h2><p id="applicantName"></p><div class="button-row"><button id="approve" class="primary">确认加入</button><button id="reject">拒绝</button></div></div>
             <div id="lobbyPanel" class="aside-block"><span class="eyebrow">TAKE YOUR TIME</span><h2 id="lobbyTitle">等另一个人来</h2><p id="lobbyText">把邀请链接发给对方，房主确认后，双方准备就能开局。</p><button id="ready" class="primary wide" disabled>准备好了</button><button id="rematch" class="primary wide" hidden>再来一局</button></div>
@@ -44,6 +46,7 @@
       <footer>留一点时间，陪你下一局。<a href="../gomoku-diag/">连接诊断</a></footer>
     </div>
     <dialog id="leaveDialog"><h2>要结束这个房间吗？</h2><p>双方都将无法继续本房间，进行中的对局会中止，不计输赢。</p><div class="button-row"><button id="stay">继续下棋</button><button id="confirmLeave" class="primary">关闭房间</button></div></dialog>
+    <dialog id="undoDialog"><h2>申请悔棋</h2><p id="undoPreview"></p><p>需要对方同意。申请后暂时停止落子和计时，最多等待 30 秒。</p><div class="button-row"><button id="dismissUndo">继续下棋</button><button id="requestUndo" class="primary">发送申请</button></div></dialog>
     <script type="module" src="/../src/game/main.ts"></script>
   </body>
 </html>

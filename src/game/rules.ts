@@ -1,7 +1,7 @@
 export const BOARD_SIZE = 15;
 export type Seat = 1 | 2;
 export interface Point { x: number; y: number }
-export interface Move extends Point { seat: Seat; color: Seat; remainingMs?: number }
+export interface Move extends Point { id?: string; seat: Seat; color: Seat; remainingMs?: number }
 
 export function validPoint(point: Point): boolean {
   return Number.isInteger(point.x) && Number.isInteger(point.y)

@@ -1,8 +1,13 @@
 import type { Move, Point, Seat } from './rules';
 
 export type Phase = 'waiting' | 'running' | 'paused' | 'finished' | 'closed';
-export type Action = 'create' | 'apply' | 'connect' | 'snapshot' | 'sync' | 'approve' | 'reject' | 'ready' | 'move' | 'rematch' | 'leave';
-export interface Player { name: string; animal: 'dog' | 'cat'; ready: boolean; online: boolean; synced: boolean }
+export type Action = 'create' | 'apply' | 'connect' | 'snapshot' | 'sync' | 'approve' | 'reject' | 'ready' | 'move' | 'rematch' | 'leave'
+  | 'undo_request' | 'undo_respond' | 'undo_cancel' | 'emoji';
+export const reactions = { plead: '🥺', cat: '😼', dog: '🐶', heart: '❤️', laugh: '😂', cry: '😭', angry: '😤', celebrate: '🎉' } as const;
+export type Reaction = keyof typeof reactions;
+export interface ReactionEvent { id: string; seat: Seat; emoji: Reaction; at: number }
+export interface UndoRequest { id: string; seat: Seat; target: string; removeCount: 1 | 2; restoreMs: number; expiresAt: number }
+export interface Player { name: string; animal: 'dog' | 'cat'; ready: boolean; online: boolean; synced: boolean; undoLeft: number }
 export interface Pending { pending: true; room: string; code: string; serverNow: number }
 export interface Snapshot {
   pending: false;
@@ -29,6 +34,8 @@ export interface Snapshot {
   accepted: boolean;
   rejection: string | null;
   duplicate: boolean;
+  undoRequest: UndoRequest | null;
+  emojis: ReactionEvent[];
 }
 export type Reply = Pending | Snapshot;
 export interface Command {
@@ -50,7 +57,7 @@ const point = (value: unknown): value is Point => object(value) && number(value.
   && Number.isInteger(value.x) && Number.isInteger(value.y) && value.x >= 0 && value.x < 15 && value.y >= 0 && value.y < 15;
 const player = (value: unknown): value is Player => object(value) && typeof value.name === 'string'
   && (value.animal === 'cat' || value.animal === 'dog') && typeof value.ready === 'boolean'
-  && typeof value.online === 'boolean' && typeof value.synced === 'boolean';
+  && typeof value.online === 'boolean' && typeof value.synced === 'boolean' && number(value.undoLeft) && value.undoLeft >= 0 && value.undoLeft <= 2;
 
 export function isReply(value: unknown): value is Reply {
   if (!object(value) || typeof value.room !== 'string' || typeof value.code !== 'string' || !number(value.serverNow)) return false;
@@ -65,7 +72,13 @@ export function isReply(value: unknown): value is Reply {
     && (value.application === null || (object(value.application) && typeof value.application.id === 'string' && typeof value.application.name === 'string'))
     && number(value.remainingMs) && nullableNumber(value.turnDeadline) && nullableNumber(value.offlineDeadline)
     && number(value.expiresAt) && typeof value.accepted === 'boolean'
-    && (value.rejection === null || typeof value.rejection === 'string') && typeof value.duplicate === 'boolean';
+    && (value.rejection === null || typeof value.rejection === 'string') && typeof value.duplicate === 'boolean'
+    && (value.undoRequest === null || (object(value.undoRequest) && typeof value.undoRequest.id === 'string'
+      && seat(value.undoRequest.seat) && typeof value.undoRequest.target === 'string'
+      && [1, 2].includes(Number(value.undoRequest.removeCount)) && number(value.undoRequest.restoreMs)
+      && number(value.undoRequest.expiresAt)))
+    && Array.isArray(value.emojis) && value.emojis.length <= 20 && value.emojis.every(e => object(e)
+      && typeof e.id === 'string' && seat(e.seat) && typeof e.emoji === 'string' && Object.hasOwn(reactions, e.emoji) && number(e.at));
 }
 
 const messages: Record<string, string> = {
@@ -79,6 +92,10 @@ const messages: Record<string, string> = {
   room_closed: '房间已关闭，请创建新房间', create_limit: '创建太频繁，请稍后重试或继续已有房间',
   invalid_position: '请选择棋盘上的空交叉点', wrong_phase: '当前状态无法执行此操作',
   application_changed: '加入申请已变化，请核对后重试', protocol_mismatch: '网页版本已更新，请刷新',
+  undo_limit: '本局两次悔棋机会已用完', no_undo_move: '你还没有落子，暂时不能悔棋',
+  undo_target_changed: '最近棋步已变化，请重新核对悔棋范围', undo_already_requested: '这一步已经申请过悔棋，请继续对局',
+  undo_cooldown: '请等上次申请满 30 秒后再试', undo_expired: '悔棋申请已结束或过期',
+  invalid_emoji: '请选择提供的表情', emoji_rate_limit: '表情发得太快啦，稍等一下',
 };
 export function errorMessage(code: string): string {
   return messages[code] ?? '服务端未确认操作，请重试连接';

@@ -45,10 +45,11 @@ async function pair(browser: Browser, mobile = false) {
 async function play(page: Page, x: number, y: number, touch = false) {
   const cell = page.locator(`#board button[data-x="${x}"][data-y="${y}"]`);
   await expect(cell).toHaveAttribute('aria-disabled', 'false');
-  const accepted = page.waitForResponse(r => r.url().endsWith('/rpc/gomoku_command') && r.request().postDataJSON()?.p_action === 'move');
-  if (touch) { await cell.tap(); await expect(page.locator('#confirm')).toBeEnabled(); await page.locator('#confirm').tap(); }
-  else await cell.click();
-  const response = await accepted;
+  if (touch) { await cell.tap(); await expect(page.locator('#confirm')).toBeEnabled(); }
+  const [response] = await Promise.all([
+    page.waitForResponse(r => r.url().endsWith('/rpc/gomoku_command') && r.request().postDataJSON()?.p_action === 'move'),
+    touch ? page.locator('#confirm').tap() : cell.click(),
+  ]);
   const snapshot = await response.json() as Snapshot;
   expect(snapshot.accepted).toBe(true);
   return snapshot;
@@ -179,6 +180,38 @@ test('public authoritative timeout and disconnect pause/resume', async ({ browse
     await expect(b.locator('#gameStatus')).toContainText('获胜');
     await expect(a.locator('#lobbyText')).toContainText('超时');
     expect(await a.locator('#gameStatus').textContent()).toBe(await b.locator('#gameStatus').textContent());
+    expect(game.errors).toEqual([]);
+  } finally { await finish(contexts); }
+});
+
+test('mutual undo, exact impact, emoji delivery while paused and refreshed requests', async ({ browser }) => {
+  test.skip(!process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL);
+  const game = await pair(browser);
+  const { a, b, contexts } = game;
+  try {
+    const black = game.state().blackSeat === 1 ? a : b;
+    const white = black === a ? b : a;
+    await play(black, 7, 7, black === b); await play(white, 8, 8, white === b);
+    await expect(black.locator('#undo')).toBeEnabled(); await black.locator('#undo').click();
+    await expect(black.locator('#undoPreview')).toContainText('最近 2 颗');
+    await black.locator('#requestUndo').click();
+    await expect(white.locator('#undoPanel')).toBeVisible();
+    await expect(white.locator('#undoImpact')).toContainText('最近 2 颗');
+    await expect(white.locator('#gameStatus')).toHaveText('悔棋请求待处理');
+    await white.locator('[data-emoji="heart"]').click();
+    await expect(white.locator('#selfPlayer .reaction-bubble')).toHaveText('❤️');
+    await expect(black.locator('#opponentPlayer .reaction-bubble')).toHaveText('❤️');
+    await black.reload();
+    await expect(black.locator('#undoPanel')).toBeVisible();
+    await expect(black.locator('.reaction-bubble')).toHaveCount(0);
+    await expect(white.locator('#acceptUndo')).toBeEnabled(); await white.locator('#acceptUndo').click();
+    await expect(black.locator('#board .stone:not(.preview)')).toHaveCount(0);
+    await expect(white.locator('#board .stone:not(.preview)')).toHaveCount(0);
+    await expect(black.locator('#selfPlayer')).toContainText('悔棋 1 次');
+    await expect(white.locator('#opponentPlayer')).toContainText('悔棋 1 次');
+    await expect(black.locator('#gameStatus')).toContainText('的回合');
+    await expect(black.locator('#board button[data-x="6"][data-y="6"]')).toHaveAttribute('aria-disabled', 'false');
+    await black.screenshot({ path: 'docs/internal/game-interactions.png', fullPage: true });
     expect(game.errors).toEqual([]);
   } finally { await finish(contexts); }
 });

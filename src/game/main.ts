@@ -3,8 +3,8 @@ import { avatar } from './avatars';
 import { login, send } from './api';
 import { clockText, createId } from './rules';
 import type { Point } from './rules';
-import { errorMessage } from './protocol';
-import type { Action, Command, Reply, Snapshot } from './protocol';
+import { errorMessage, reactions } from './protocol';
+import type { Action, Command, Reaction, Reply, Snapshot } from './protocol';
 
 const el = (id: string) => document.getElementById(id)!;
 const button = (id: string) => el(id) as HTMLButtonElement;
@@ -20,6 +20,7 @@ let pending = false;
 let pendingName = '';
 let pendingAutoName = true;
 let busy = false;
+let polling = false;
 let connected = false;
 let superseded = false;
 let selection: Point | null = null;
@@ -29,6 +30,9 @@ let epoch = 0;
 let uncertain: Command | null = null;
 let lastStatus = '';
 const cells: HTMLButtonElement[] = [];
+const seenReactions = new Set<string>();
+const bubbles = new Map<number, { reaction: Reaction; until: number }>();
+let undoTarget = '';
 
 function notice(message: string, error = false) {
   if (lastStatus !== message) { el('notice').textContent = message; lastStatus = message; }
@@ -38,7 +42,8 @@ function notice(message: string, error = false) {
 function canMove() {
   return !!snapshot && snapshot.phase === 'running' && snapshot.turnSeat === snapshot.seat
     && snapshot.players.every(p => p.online && p.synced) && connected && !busy && !uncertain
-    && !document.hidden && performance.now() - lastReceiptAt < 15000;
+    && !document.hidden && performance.now() - lastReceiptAt < 15000
+    && snapshot.turnDeadline !== null && snapshot.turnDeadline > serverAtReceipt + performance.now() - lastReceiptAt;
 }
 
 function renderClock() {
@@ -55,8 +60,15 @@ function renderClock() {
     el('turnHint').textContent = '时间到，等待服务端裁决';
     button('confirm').disabled = true;
   }
+  if (s.undoRequest) {
+    el('undoCountdown').textContent = `等待回应 ${clockText(s.undoRequest.expiresAt - now)}`;
+    if (s.offlineDeadline === null) el('turnHint').textContent = '悔棋协商中，计时已暂停';
+  }
   if (performance.now() - lastReceiptAt >= 15000 && connected) {
     connected = false; selection = null; render(); notice('正在重新同步，暂时不能落子', true);
+  }
+  for (const [seat, bubble] of bubbles) {
+    if (performance.now() >= bubble.until) { bubbles.delete(seat); document.querySelector(`[data-bubble-seat="${seat}"]`)?.remove(); }
   }
 }
 
@@ -69,7 +81,13 @@ function playerElements(s: Snapshot) {
     node.className = `player ${s.phase === 'running' && s.turnSeat === seat ? 'active' : ''}`;
     node.innerHTML = `${avatar(p.animal)}<div class="player-info"><span class="player-name"></span><span class="player-detail"><i class="color-dot ${s.blackSeat === seat ? '' : 'white'}"></i><span></span></span></div>`;
     node.querySelector('.player-name')!.textContent = p.name ? `${p.name}${seat === s.seat ? '（你）' : '（对方）'}` : '等待对方入座';
-    node.querySelector('.player-detail span')!.textContent = `${s.blackSeat === seat ? '黑棋' : '白棋'} · ${!p.name ? '未加入' : !p.online ? '离线' : !p.synced ? '同步中' : p.ready ? '已准备' : '在线'}`;
+    node.querySelector('.player-detail span')!.textContent = `${s.blackSeat === seat ? '黑棋' : '白棋'} · ${!p.name ? '未加入' : !p.online ? '离线' : !p.synced ? '同步中' : p.ready ? '已准备' : '在线'} · 悔棋 ${p.undoLeft} 次`;
+    const bubble = bubbles.get(seat);
+    if (bubble && performance.now() < bubble.until) {
+      const emoji = document.createElement('span'); emoji.className = 'reaction-bubble';
+      emoji.dataset.bubbleSeat = String(seat); emoji.textContent = reactions[bubble.reaction];
+      emoji.setAttribute('role', 'img'); emoji.setAttribute('aria-label', '对局表情'); node.appendChild(emoji);
+    }
     container.appendChild(node);
   }
 }
@@ -121,7 +139,8 @@ function render() {
   if (s.phase === 'running') {
     title = `${turnName}的回合`; text = s.turnSeat === s.seat ? '轮到你了，选一个空交叉点' : '等对方想一想，下一步就到你';
   } else if (s.phase === 'paused') {
-    title = '等你们重新连上'; text = '棋盘已保存。双方恢复连接并同步后，继续剩余时间。';
+    title = s.undoRequest ? '悔棋请求待处理' : '等你们重新连上';
+    text = s.undoRequest ? '等对方回应，双方暂时不能落子。' : '棋盘已保存。双方恢复连接并同步后，继续剩余时间。';
   } else if (s.phase === 'waiting') {
     title = s.players[1].name ? '都准备好，就开局' : '等另一个人来'; text = '分享邀请链接，房主确认加入后，双方点击准备。';
   } else if (s.phase === 'closed') {
@@ -146,15 +165,39 @@ function render() {
   for (const id of ['approve', 'reject', 'leave']) button(id).disabled = busy || !connected || !!uncertain;
   button('confirm').disabled = !selection || !canMove();
   button('cancel').disabled = !selection || busy;
+  button('undo').disabled = busy || !connected || !!uncertain || s.phase !== 'running' || own.undoLeft === 0
+    || !s.players.every(p => p.online && p.synced) || !s.moves.some(m => m.seat === s.seat);
+  const request = s.undoRequest;
+  el('undoPanel').hidden = !request;
+  if (request) {
+    const requester = s.players[request.seat - 1].name;
+    el('undoImpact').textContent = `同意后撤销最近 ${request.removeCount} 颗棋子，重新轮到${requester}，恢复 ${Math.ceil(request.restoreMs / 1000)} 秒。`;
+    button('acceptUndo').hidden = request.seat === s.seat;
+    button('denyUndo').hidden = request.seat === s.seat;
+    button('cancelUndo').hidden = request.seat !== s.seat;
+    for (const id of ['acceptUndo', 'denyUndo', 'cancelUndo']) button(id).disabled = busy || !connected || !!uncertain;
+  }
+  for (const node of el('reactions').querySelectorAll<HTMLButtonElement>('button')) {
+    node.disabled = busy || !connected || !!uncertain || s.phase === 'closed' || !s.players.every(p => p.online && p.synced);
+  }
   el('selectionHint').textContent = selection ? `已选 ${String.fromCharCode(65 + selection.x)}${selection.y + 1}，确认后才落子` : '手机点选交叉点，再确认落子';
   renderBoard(); renderClock();
 }
 
 function apply(reply: Reply) {
+  const wasConnected = connected;
   connected = true; superseded = false;
   if (reply.pending) { pending = true; snapshot = null; room = reply.room; render(); return; }
   if (snapshot && (reply.version < snapshot.version || reply.serverNow < snapshot.serverNow)) return;
   if (snapshot?.gameId !== reply.gameId || snapshot.moves.length !== reply.moves.length || reply.phase !== 'running') selection = null;
+  if (snapshot?.gameId !== reply.gameId) bubbles.clear();
+  for (const event of reply.emojis) {
+    if (!seenReactions.has(event.id) && wasConnected && snapshot?.gameId === reply.gameId && reply.serverNow - event.at <= 10000) {
+      bubbles.set(event.seat, { reaction: event.emoji, until: performance.now() + 1500 });
+    }
+    seenReactions.add(event.id);
+  }
+  if (seenReactions.size > 100) { seenReactions.clear(); reply.emojis.forEach(e => seenReactions.add(e.id)); }
   snapshot = reply; pending = false; room = reply.room;
   serverAtReceipt = reply.serverNow; lastReceiptAt = performance.now();
   localStorage.setItem('gomoku.room', room);
@@ -213,9 +256,9 @@ async function mutate(action: Action, data: Record<string, unknown> = {}, retry 
   if (!reply || reply.pending) return;
   uncertain = null; sessionStorage.removeItem(`gomoku.operation.${room}`);
   selection = null;
-  if (!reply.accepted && reply.rejection === 'state_conflict' && rebase && !retry
-    && (action === 'ready' || action === 'rematch') && reply.gameId === request.p_game
-    && reply.phase === (action === 'ready' ? 'waiting' : 'finished')) {
+  const sameIntent = ((action === 'ready' || action === 'rematch') && reply.phase === (action === 'ready' ? 'waiting' : 'finished'))
+    || ((action === 'undo_respond' || action === 'undo_cancel') && reply.phase === 'paused' && reply.undoRequest?.id === data.request);
+  if (!reply.accepted && reply.rejection === 'state_conflict' && rebase && !retry && sameIntent && reply.gameId === request.p_game) {
     await synchronize(); await mutate(action, data, false, false); return;
   }
   notice(reply.accepted ? action === 'move' ? '落子已保存，等对方下一步。' : '已同步，棋盘与对方保持一致。' : errorMessage(reply.rejection || ''));
@@ -235,12 +278,18 @@ async function connect(action: 'create' | 'apply' | 'connect', target: string) {
 }
 
 async function poll() {
-  if (!room || busy || document.hidden || superseded) return;
-  await run(async () => {
+  if (!room || busy || polling || document.hidden || superseded) return;
+  polling = true;
+  try {
     await exchange(command(pending ? 'apply' : 'snapshot', pending ? { name: pendingName, autoName: pendingAutoName } : {}));
     await synchronize();
     if (connected) notice(pending ? '申请已送达，等房主确认。' : '连接正常。');
-  });
+  } catch (error) {
+    connected = false; selection = null;
+    const message = error instanceof Error ? error.message : '连接失败，稍后会自动重试';
+    superseded = message === errorMessage('superseded');
+    notice(message, true);
+  } finally { polling = false; render(); }
 }
 
 function select(point: Point, direct = false) {
@@ -254,11 +303,14 @@ for (let y = 0; y < 15; y++) {
   for (let x = 0; x < 15; x++) {
     const cell = document.createElement('button'); cell.type = 'button'; cell.setAttribute('role', 'gridcell');
     cell.dataset.x = String(x); cell.dataset.y = String(y); cell.tabIndex = x === 7 && y === 7 ? 0 : -1;
-    let pointer: { x: number; y: number } | null = null;
-    cell.addEventListener('pointerdown', event => { pointer = { x: event.clientX, y: event.clientY }; });
+    let pointer: { x: number; y: number; moved: boolean } | null = null;
+    cell.addEventListener('pointerdown', event => { pointer = { x: event.clientX, y: event.clientY, moved: false }; });
+    cell.addEventListener('pointermove', event => {
+      if (pointer && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) >= 10) pointer.moved = true;
+    });
     cell.addEventListener('pointercancel', () => { pointer = null; });
     cell.addEventListener('pointerup', event => {
-      if (pointer && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) < 10) select({ x, y }, event.pointerType === 'mouse');
+      if (pointer && !pointer.moved && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) < 10) select({ x, y }, event.pointerType === 'mouse');
       pointer = null;
     });
     cell.addEventListener('click', event => { if (event.detail === 0) select({ x, y }); });
@@ -297,6 +349,27 @@ button('approve').onclick = () => { void run(() => mutate('approve', { applicati
 button('reject').onclick = () => { void run(() => mutate('reject', { application: snapshot?.application?.id })); };
 button('confirm').onclick = () => { if (selection && canMove()) { const point = selection; void run(() => mutate('move', { x: point.x, y: point.y })); } };
 button('cancel').onclick = () => { selection = null; render(); };
+const undoDialog = el('undoDialog') as HTMLDialogElement;
+button('undo').onclick = () => {
+  if (!snapshot) return;
+  const index = snapshot.moves.findLastIndex(m => m.seat === snapshot!.seat);
+  if (index < 0) return;
+  const move = snapshot.moves[index]; undoTarget = move.id ?? `legacy-${index}`;
+  const seconds = Math.ceil(Math.min(60000, Math.max(15000, move.remainingMs ?? 60000)) / 1000);
+  el('undoPreview').textContent = `对方同意后，撤销最近 ${snapshot.moves.length - index} 颗棋子，由你重新落子，恢复 ${seconds} 秒。本局还可成功悔棋 ${snapshot.players[snapshot.seat - 1].undoLeft} 次。`;
+  undoDialog.showModal();
+};
+button('dismissUndo').onclick = () => undoDialog.close();
+button('requestUndo').onclick = () => { undoDialog.close(); void run(() => mutate('undo_request', { target: undoTarget })); };
+button('acceptUndo').onclick = () => { void run(() => mutate('undo_respond', { request: snapshot?.undoRequest?.id, accept: true })); };
+button('denyUndo').onclick = () => { void run(() => mutate('undo_respond', { request: snapshot?.undoRequest?.id, accept: false })); };
+button('cancelUndo').onclick = () => { void run(() => mutate('undo_cancel', { request: snapshot?.undoRequest?.id })); };
+const reactionNames: Record<Reaction, string> = { plead: '拜托', cat: '猫猫', dog: '狗狗', heart: '爱心', laugh: '大笑', cry: '哭哭', angry: '生气', celebrate: '庆祝' };
+for (const [id, emoji] of Object.entries(reactions)) {
+  const node = document.createElement('button'); node.type = 'button'; node.textContent = emoji;
+  node.setAttribute('aria-label', `发送${reactionNames[id as Reaction]}表情`); node.dataset.emoji = id;
+  node.onclick = () => { void run(() => mutate('emoji', { emoji: id })); }; el('reactions').appendChild(node);
+}
 button('cancelApplication').onclick = () => { epoch++; room = ''; pending = false; snapshot = null; connected = false; history.replaceState(null, '', location.pathname); render(); };
 button('invite').onclick = () => {
   const link = `${location.origin}${location.pathname}#${room}`;

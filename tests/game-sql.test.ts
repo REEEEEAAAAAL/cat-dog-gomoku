@@ -46,6 +46,8 @@ beforeAll(async () => {
   await time();
   const migration = await readFile('cloudbase/migrations/20261023010000_gomoku_mvp.sql', 'utf8');
   await db.exec(migration.replaceAll('clock_timestamp()', 'public.test_now()'));
+  const extras = await readFile('cloudbase/migrations/20261023020000_undo_and_reactions.sql', 'utf8');
+  await db.exec(extras.replaceAll('clock_timestamp()', 'public.test_now()'));
 });
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
@@ -176,5 +178,106 @@ describe('game RPC on isolated PostgreSQL with controlled server clock', () => {
     await start(); await call('leave'); expect(current).toMatchObject({ phase: 'closed', reason: 'left', winner: null });
     await call('move', { x: 0, y: 0 }); expect(current.rejection).toBe('room_closed');
     await time(86400000); await expect(call('snapshot')).rejects.toThrow('expired');
+  });
+
+  async function alive(ms: number) {
+    await time(ms);
+    await db.exec('UPDATE public.gomoku_rooms SET owner_seen_at=public.test_now(),guest_seen_at=public.test_now()');
+  }
+  async function requestUndo() {
+    const index = current.moves.findLastIndex(m => m.seat === caller);
+    await call('undo_request', { target: current.moves[index]?.id ?? `legacy-${index}` });
+    return current.undoRequest!;
+  }
+  async function moveFirst(ms = 0) {
+    await start(); await alive(ms); await as(current.turnSeat); const first = caller;
+    await call('move', { x: 7, y: 7 }); return first;
+  }
+  it.each([1, 2])('undo removes the correct %s latest stones and restores the requester turn', async count => {
+    const first = await moveFirst(22000);
+    if (count === 2) { await as(current.turnSeat); await call('move', { x: 8, y: 8 }); }
+    await as(first); await call('snapshot'); const request = await requestUndo();
+    expect(current.phase).toBe('paused'); expect(request).toMatchObject({ removeCount: count, restoreMs: 38000, seat: first });
+    await as((3 - first) as Seat); await call('snapshot');
+    const operation = crypto.randomUUID(), version = current.version, game = current.gameId;
+    await call('undo_respond', { request: request.id, accept: true }, { operation, version, game });
+    expect(current).toMatchObject({ phase: 'running', turnSeat: first, remainingMs: 38000, moves: [], undoRequest: null });
+    expect(current.players[first - 1].undoLeft).toBe(1);
+    await call('undo_respond', { request: request.id, accept: true }, { operation, version, game });
+    expect(current.duplicate).toBe(true); expect(current.players[first - 1].undoLeft).toBe(1);
+  });
+  it.each([3000, 15000, 38000, 60000])('undo restores a clamped %s ms budget', async remainder => {
+    const first = await moveFirst(60000 - remainder); const request = await requestUndo();
+    expect(request.restoreMs).toBe(Math.max(15000, remainder));
+    await as((3 - first) as Seat); await call('snapshot'); await call('undo_respond', { request: request.id, accept: true });
+    expect(current.remainingMs).toBe(Math.max(15000, remainder));
+  });
+  it.each(['reject', 'cancel', 'expire'])('undo %s resumes the exact frozen budget without consuming a use and blocks re-requesting the same move', async finish => {
+    const first = await moveFirst(); await alive(4000); const request = await requestUndo();
+    const turn = current.turnSeat, remaining = current.remainingMs;
+    if (finish === 'reject') {
+      await as((3 - first) as Seat); await call('snapshot'); await call('undo_respond', { request: request.id, accept: false });
+    } else if (finish === 'cancel') await call('undo_cancel', { request: request.id });
+    else { await alive(34000); await call('snapshot'); }
+    expect(current).toMatchObject({ phase: 'running', turnSeat: turn, remainingMs: remaining, undoRequest: null });
+    expect(current.players[first - 1].undoLeft).toBe(2);
+    await as(first); await call('snapshot'); await requestUndo(); expect(current.rejection).toBe('undo_already_requested');
+  });
+  it('undo is limited to two successes and enforces a thirty-second request cooldown', async () => {
+    const first = await moveFirst(); let request = await requestUndo();
+    await as((3 - first) as Seat); await call('snapshot'); await call('undo_respond', { request: request.id, accept: true });
+    await as(first); await call('snapshot'); await call('move', { x: 6, y: 6 }); await requestUndo();
+    expect(current.rejection).toBe('undo_cooldown');
+    await alive(30000); await requestUndo(); request = current.undoRequest!;
+    await as((3 - first) as Seat); await call('snapshot'); await call('undo_respond', { request: request.id, accept: true });
+    await as(first); await call('snapshot'); await call('move', { x: 5, y: 5 }); await requestUndo();
+    expect(current.rejection).toBe('undo_limit'); expect(current.players[first - 1].undoLeft).toBe(0);
+  });
+  it('blocks moves during negotiation and prevents self-approval or opponent cancellation', async () => {
+    const first = await moveFirst(); const request = await requestUndo();
+    await call('undo_respond', { request: request.id, accept: true }); expect(current.rejection).toBe('forbidden');
+    await as((3 - first) as Seat); await call('snapshot');
+    await call('undo_cancel', { request: request.id }); expect(current.rejection).toBe('forbidden');
+    await call('move', { x: 6, y: 6 }); expect(current.rejection).toBe('not_running');
+  });
+  it('cancels undo on detected disconnect and does not restore a time bonus on reconnect', async () => {
+    const first = await moveFirst(20000); await alive(24000); await requestUndo(); const frozen = current.remainingMs;
+    await time(50000); await as((3 - first) as Seat); await call('snapshot');
+    expect(current).toMatchObject({ phase: 'paused', undoRequest: null, remainingMs: frozen });
+    const deadline = current.offlineDeadline; expect(deadline).toBe(baseTime + 349000);
+    await sync(); await as(first); await call('connect'); await sync();
+    expect(current).toMatchObject({ phase: 'running', remainingMs: frozen });
+    await requestUndo(); expect(current.rejection).toBe('undo_already_requested');
+  });
+  it('keeps the pending request across a short refresh and does not resume until negotiation completes', async () => {
+    const first = await moveFirst(); const request = await requestUndo();
+    await time(3000); await call('connect'); await sync();
+    expect(current).toMatchObject({ phase: 'paused', undoRequest: { id: request.id }, offlineDeadline: null });
+    await as((3 - first) as Seat); await call('snapshot'); await call('undo_respond', { request: request.id, accept: false });
+    expect(current.phase).toBe('running');
+  });
+  it('rejects undo before a first move, after timeout, and against a stale target/version', async () => {
+    await start(); await as(current.turnSeat); await call('undo_request', { target: 'missing' }); expect(current.rejection).toBe('no_undo_move');
+    await call('move', { x: 7, y: 7 }); await call('undo_request', { target: 'missing' }); expect(current.rejection).toBe('undo_target_changed');
+    await call('undo_request', { target: current.moves[0].id }, { version: current.version - 1 }); expect(current.rejection).toBe('state_conflict');
+    await alive(60000); await call('snapshot'); await requestUndo(); expect(current.rejection).toBe('not_running');
+  });
+  it('emoji does not change turn, version or deadlines and remains usable during undo', async () => {
+    await moveFirst(); const request = await requestUndo();
+    const version = current.version, remaining = current.remainingMs;
+    await call('emoji', { emoji: 'heart' });
+    expect(current).toMatchObject({ phase: 'paused', version, remainingMs: remaining, undoRequest: { id: request.id } });
+    expect(current.emojis).toHaveLength(1); expect(current.emojis[0].emoji).toBe('heart');
+  });
+  it('enforces the emoji whitelist, two-second cooldown, per-minute rate and idempotency', async () => {
+    await start(); await call('emoji', { emoji: '<script>' }); expect(current.rejection).toBe('invalid_emoji');
+    const operation = crypto.randomUUID(), version = current.version, game = current.gameId;
+    await call('emoji', { emoji: 'heart' }, { operation, version, game });
+    await call('emoji', { emoji: 'heart' }, { operation, version, game }); expect(current.emojis).toHaveLength(1);
+    await call('emoji', { emoji: 'cat' }); expect(current.rejection).toBe('emoji_rate_limit');
+    for (let i = 1; i < 10; i++) { await alive(i * 2000); await call('emoji', { emoji: 'laugh' }); expect(current.accepted).toBe(true); }
+    await alive(20000); await call('emoji', { emoji: 'cat' }); expect(current.rejection).toBe('emoji_rate_limit');
+    await alive(60000); await call('emoji', { emoji: 'cat' });
+    expect(current.reason).toBe('timeout');
   });
 });
