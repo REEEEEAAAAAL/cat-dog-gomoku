@@ -1,1 +1,15 @@
-PLAN.md
+node_modules/
+dist/
+.wrangler/
+.cloudbase/
+coverage/
+test-results/
+playwright-report/
+docs/internal/
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+*.log
+.npm-cache/

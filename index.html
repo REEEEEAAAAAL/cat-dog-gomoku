@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>猫狗五子棋 · 连接诊断</title>
+  </head>
+  <body>
+    <main>
+      <header><p class="eyebrow">CAT & DOG GOMOKU / 阶段 0</p><h1>先试试，能否连上彼此</h1>
+        <p>这是连接测试页。没有棋盘，无需安装，也不用打开开发者工具。</p></header>
+      <section aria-label="测试环境"><label>设备 / 浏览器 / 网络（请勿填个人信息）
+        <input id="environment" maxlength="100" placeholder="例如：小米 / 系统浏览器 / 移动数据" /></label>
+        <p class="hint">请确认此页流量未经过 VPN 或代理，无需更改全局设置。</p></section>
+      <section><h2>1. 连接两台设备</h2><p>一人新建测试，把链接发给另一人。每个测试只容纳两个浏览器，24 小时有效。</p>
+        <div class="actions"><button id="create">新建测试</button><button id="invite" disabled>复制邀请链接</button></div>
+        <div class="actions"><button id="retry">重新连接</button><button id="disconnect" disabled>模拟断开</button></div>
+        <p id="connection" role="status" aria-live="polite">尚未连接</p>
+        <dl><div><dt>你的身份</dt><dd id="seat">待分配</dd></div><div><dt>双方同步</dt><dd id="peers">等待连接</dd></div>
+          <div><dt>心跳往返</dt><dd id="rtt">待测</dd></div><div><dt>重连次数</dt><dd id="reconnects">0</dd></div></dl>
+        <textarea id="copybox" hidden readonly aria-label="复制失败时请长按复制"></textarea>
+      </section>
+      <section><h2>2. 双向通信与保存</h2><p>两人轮流点发送。双方看到同一个计数；刷新后计数应保留。</p>
+        <div class="counter" id="count">0</div><div class="actions"><button id="pulse" disabled>发送测试信号</button>
+        <button id="sample" disabled>5 分钟通信（100 次）</button>
+        <button id="longSample" disabled>30 分钟通信（阶段 0B）</button></div><p id="sampleStatus" role="status">可在任一设备发起；一次只让一人自动发送。0A 通过后才进行 30 分钟测试。</p>
+        <dl><div><dt>确认 P95 / 样本数</dt><dd id="ack">待测</dd></div>
+          <div><dt>对端确认 P95 / 样本数</dt><dd id="delivery">待测</dd></div></dl>
+        <p class="hint">对端指标包含对方收到后返回确认的完整耗时，是送达耗时的保守上界。页面时钟不用于裁定服务端状态。</p>
+      </section>
+      <section><h2>3. 计时与恢复</h2><p>双方连接后开始 60 秒计时。断开任一方后，服务端检测离线并暂停；双方恢复同步后继续剩余时间。连续等待满 5 分钟中止，不判负。</p>
+        <div id="timer" class="timer">60.0 秒</div><p id="phase" role="status">等待测试</p>
+        <button id="start" disabled>开始 60 秒测试</button><p id="alarm" class="hint">等待服务端 Alarm 检查</p>
+        <p class="hint">“模拟断开”会停止自动重连；点击“重新连接”恢复。真实切网、锁屏、后台请直接操作手机。倒计时到零后，等待服务端确认结果。</p>
+      </section>
+      <section><h2>4. 记录测试结果</h2><p>报告仅包含测试环境标签、状态与性能指标，不包含邀请链接、Cookie、会话 ID 或鉴权信息。请自行检查环境标签。</p>
+        <div class="actions"><button id="report">复制脱敏报告</button><button id="resetStats">开始新一轮统计</button></div>
+        <p id="notice" role="status" aria-live="polite"></p>
+        <details><summary>本轮事件（最近 30 条）</summary><ol id="events"></ol></details>
+      </section>
+      <footer>自动化和本地模拟不能替代中国大陆真机网络验收。免费额度、后台行为和平台休眠均需结合实际记录判断。</footer>
+    </main>
+    <script type="module" src="/src/client/main.ts"></script>
+  </body>
+</html>

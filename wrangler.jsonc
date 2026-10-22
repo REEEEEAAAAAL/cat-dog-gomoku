@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "cat-dog-gomoku-diagnostics",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-10-22",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "DIAGNOSTICS", "class_name": "DiagnosticSession" }]
+  },
+  "migrations": [{ "tag": "diagnostics-v1", "new_sqlite_classes": ["DiagnosticSession"] }],
+  "observability": { "enabled": false },
+  "send_metrics": false
+}

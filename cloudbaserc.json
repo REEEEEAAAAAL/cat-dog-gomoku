@@ -1,0 +1,12 @@
+{
+  "envId": "cat-and-dog-gomoku-d4c9e5cfbbfc0",
+  "$schema": "https://static.cloudbase.net/cli/cloudbaserc.schema.json",
+  "app": {
+    "serviceName": "gomoku-diag",
+    "framework": "static",
+    "installCommand": "",
+    "buildCommand": "",
+    "outputDir": "./",
+    "root": "dist/cloudbase/site"
+  }
+}
