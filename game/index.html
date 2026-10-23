@@ -24,6 +24,7 @@
         </section>
         <section id="room" class="room-layout" hidden>
           <div class="play-area"><div class="room-heading"><div><span class="eyebrow">JUST THE TWO OF US</span><h1>当前对局 <span id="round">01</span></h1></div><div class="room-tag">房间 <strong id="roomCode"></strong></div></div>
+            <div id="readySlot"></div>
             <div id="opponentPlayer" class="players"></div>
             <div class="turn-bar"><div><p id="gameStatus" role="status" aria-live="polite">等待对方加入</p><small id="turnHint">双方准备后开始</small></div><time id="clock" aria-label="当前回合剩余时间">01:00</time></div>
             <div id="rematchPanel" class="rematch-panel" role="status" hidden><p>对方邀请你再来一局喔😊</p><button id="acceptRematch" class="primary">同意，再来一局</button></div>
@@ -36,7 +37,7 @@
           <aside class="room-aside">
             <div id="pendingPanel" class="aside-block" hidden><h2>等房主确认</h2><p>加入申请已送达，确认后就能看到棋盘。</p><button id="cancelApplication" class="text-button">撤回申请</button></div>
             <div id="applicationPanel" class="aside-block" hidden><h2>有人来啦</h2><p id="applicantName"></p><div class="button-row"><button id="approve" class="primary">确认加入</button><button id="reject">拒绝</button></div></div>
-            <div id="lobbyPanel" class="aside-block"><h2 id="lobbyTitle">等另一个人来</h2><p id="lobbyText">把邀请链接发给对方，房主确认后，双方准备就能开局。</p><button id="ready" class="primary wide" disabled>准备好了</button><button id="rematch" class="primary wide" hidden>再来一局</button><button id="homeReturn" class="primary wide" hidden>返回首页</button></div>
+            <div id="lobbySlot"><div id="lobbyPanel" class="aside-block"><h2 id="lobbyTitle">等另一个人来</h2><p id="lobbyText">把邀请链接发给对方，房主确认后，双方准备就能开局。</p><p id="readyNotice" class="ready-notice" role="status" aria-live="polite" hidden>对方准备好了哦~</p><button id="ready" class="primary wide" disabled>准备好啦！</button><button id="rematch" class="primary wide" hidden>再来一局</button><button id="homeReturn" class="primary wide" hidden>返回首页</button></div></div>
             <div id="invitePanel" class="aside-block"><h2>邀请TA一起下棋吧~</h2><p>复制链接发给对方，也可以直接分享房间码。</p><div class="copy-actions"><button id="invite">复制邀请链接</button><button id="copyCode">复制房间码</button></div><p id="copyStatus" class="copy-status" role="status" aria-live="polite"></p><textarea id="copyFallback" rows="3" readonly aria-label="邀请链接，长按复制" hidden></textarea></div>
             <details class="rules-block" open><summary>对局规则</summary><p>黑棋先手，横竖斜连成五颗或更多就赢。无禁手。</p><p>每步 60 秒，行棋超时判负。断线后暂停，超过 5 分钟未恢复则中止，不计输赢。</p><p>电脑和手机都先点选预览，再确认落子。键盘方向键选点，回车预览后确认。</p></details>
             <button id="leave" class="text-button leave">离开并关闭房间</button>

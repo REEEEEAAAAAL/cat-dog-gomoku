@@ -9,8 +9,11 @@ export default defineConfig({
   server: { fs: { allow: [process.cwd()] } },
   plugins: [{
     name: 'local-postgresql-test',
-    transformIndexHtml(html) {
-      return html.replace(/(?:\/\.\.)?\/src\/game\/main.ts/, () => `/@fs/${resolve('src/game/main.ts').replaceAll('\\', '/')}`);
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) {
+        return html.replace(/(?:\/\.\.)?\/src\/game\/main.ts/, () => `/@fs/${resolve('src/game/main.ts').replaceAll('\\', '/')}`);
+      },
     },
     async configureServer(server) {
       const db = new PGlite();

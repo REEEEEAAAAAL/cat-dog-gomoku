@@ -24,7 +24,7 @@ async function enter(page: Page, path = './') {
   await expect(page.locator('#create')).toHaveCSS('min-height', '46px');
 }
 
-async function pair(browser: Browser, mobile = false, bothDesktop = false) {
+async function pair(browser: Browser, mobile = false, bothDesktop = false, verifyReadiness = false) {
   const contexts = await Promise.all([browser.newContext({ viewport: { width: mobile ? 390 : 1280, height: 844 }, hasTouch: mobile }),
     browser.newContext({ viewport: { width: bothDesktop ? 1280 : 360, height: bothDesktop ? 900 : 800 }, hasTouch: !bothDesktop })]);
   const [a, b] = await Promise.all(contexts.map(c => c.newPage()));
@@ -49,11 +49,48 @@ async function pair(browser: Browser, mobile = false, bothDesktop = false) {
   await expect(a.locator('#applicationPanel')).toBeVisible();
   await a.locator('#approve').click();
   await expect(b.locator('#ready')).toBeEnabled();
-  await a.locator('#ready').click(); await b.locator('#ready').click();
+  await expect(a.locator('#ready')).toHaveText('准备好啦！');
+  await a.locator('#ready').click();
+  if (verifyReadiness) {
+    await expect(b.locator('#readyNotice')).toHaveText('对方准备好了哦~');
+    await expect(b.locator('#readyNotice')).toBeVisible();
+    await b.reload();
+    await expect(b.locator('#readyNotice')).toBeVisible();
+    for (const width of [320, 390, 760, 1280, 390]) {
+      await b.setViewportSize({ width, height: 844 });
+      await expect(b.locator(`${width <= 760 ? '#readySlot' : '#lobbySlot'} > #lobbyPanel`)).toHaveCount(1);
+      if (width <= 760) {
+        const ready = await b.locator('#ready').boundingBox(), board = await b.locator('#board').boundingBox();
+        expect(ready!.y + ready!.height).toBeLessThan(board!.y);
+        expect(ready!.y + ready!.height).toBeLessThan(844);
+      }
+      expect(await b.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
+    await b.screenshot({ path: 'docs/internal/game-ready-mobile.png', fullPage: true });
+    await a.reload();
+    await expect(a.locator('#ready')).toHaveText('准备好啦！等对方');
+    await expect(a.locator('#ready')).toBeDisabled();
+    await expect(a.locator('#readyNotice')).toBeHidden();
+  }
+  await b.locator('#ready').click();
   await expect(a.locator('#gameStatus')).toContainText(/的回合|你的回合/);
   await expect(b.locator('#gameStatus')).toContainText(/的回合|你的回合/);
   return { contexts, a, b, errors, snapshots, state: () => state! };
 }
+
+test('ready notification survives refresh and mobile ready action stays above the board', async ({ browser }) => {
+  test.skip(!process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL && !process.env.GOMOKU_LOCAL_SQL);
+  const game = await pair(browser, false, false, true);
+  try {
+    for (const page of [game.a, game.b]) {
+      await expect(page.locator('#readyNotice')).toBeHidden();
+      await expect(page.locator('#ready')).toBeHidden();
+      await expect(page.locator('#readySlot')).toBeEmpty();
+      await expect(page.locator('.turn-orbit')).toHaveCSS('background-image', /conic-gradient/);
+    }
+    expect(game.errors).toEqual([]);
+  } finally { await finish(game.contexts); }
+});
 
 async function play(page: Page, x: number, y: number, touch = false) {
   const cell = page.locator(`#board button[data-x="${x}"][data-y="${y}"]`);
@@ -356,6 +393,9 @@ test('mouse previews and moves only once after confirmation and server acknowled
     p.on('request',r=>{if(r.url().endsWith('/rpc/gomoku_command') && r.postDataJSON()?.p_action==='move') moves++;});
     const cell=p.locator('#board button[data-x="7"][data-y="7"]');
     await expect(p.locator('#selfPlayer .turn-orbit')).toBeVisible();
+    await expect(p.locator('#selfPlayer .turn-orbit')).toHaveCSS('background-image', /conic-gradient/);
+    const initialAngle = await p.locator('.turn-orbit').evaluate(node => getComputedStyle(node).getPropertyValue('--turn-angle'));
+    await expect.poll(() => p.locator('.turn-orbit').evaluate(node => getComputedStyle(node).getPropertyValue('--turn-angle'))).not.toBe(initialAngle);
     await expect(p.locator('#opponentPlayer .turn-orbit')).toHaveCount(0);
     await p.emulateMedia({ reducedMotion: 'reduce' });
     await expect(p.locator('.turn-orbit')).toBeHidden();

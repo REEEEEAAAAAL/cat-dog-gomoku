@@ -9,6 +9,8 @@ import type { Action, Command, Reaction, Reply, Snapshot } from './protocol';
 const el = (id: string) => document.getElementById(id)!;
 const button = (id: string) => el(id) as HTMLButtonElement;
 const input = (id: string) => el(id) as HTMLInputElement;
+const compactLayout = window.matchMedia('(max-width:760px)');
+if (typeof CSS !== 'undefined' && typeof CSS.registerProperty === 'function') document.documentElement.classList.add('smooth-turn');
 const client = createId();
 const roomPattern = /^(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[a-f0-9]{10})$/i;
 let storedRoom = localStorage.getItem('gomoku.room') || '';
@@ -127,7 +129,7 @@ function playerElements(s: Snapshot) {
     node.innerHTML = `${avatar(p.animal)}<div class="player-info"><span class="player-name"></span><span class="player-detail"><i class="color-dot ${s.blackSeat === seat ? '' : 'white'}"></i><span></span></span></div>`;
     if (s.phase === 'running' && s.turnSeat === seat) {
       node.style.setProperty('--turn-phase', `${-(performance.now() / 1000 % 5)}s`);
-      node.insertAdjacentHTML('beforeend', '<svg class="turn-orbit" aria-hidden="true"><rect x="1" y="1" rx="14" pathLength="100"/></svg>');
+      node.insertAdjacentHTML('beforeend', '<span class="turn-orbit" aria-hidden="true"></span>');
     }
     node.querySelector('.player-name')!.textContent = p.name ? `${p.name}${seat === s.seat ? '（你）' : '（对方）'}` : '等待对方入座';
     node.querySelector('.player-detail span')!.textContent = `${s.blackSeat === seat ? '黑棋' : '白棋'} · ${!p.name ? '未加入' : !p.online ? '离线' : !p.synced ? '同步中' : p.ready ? '已准备' : '在线'} · 悔棋：剩余${p.undoLeft}次`;
@@ -161,7 +163,14 @@ function renderBoard() {
   } else el('winOverlay').replaceChildren();
 }
 
+function positionLobby() {
+  const target = el(compactLayout.matches && snapshot?.phase === 'waiting' ? 'readySlot' : 'lobbySlot');
+  if (el('lobbyPanel').parentElement !== target) target.appendChild(el('lobbyPanel'));
+}
+compactLayout.addEventListener('change', positionLobby);
+
 function render() {
+  positionLobby();
   el('home').hidden = !!room;
   el('room').hidden = !room;
   const s = snapshot;
@@ -207,7 +216,8 @@ function render() {
   el('turnHint').textContent = s.phase === 'running' ? `第 ${s.moves.length + 1} 手 · ${s.turnSeat === s.blackSeat ? '黑棋' : '白棋'}行棋`
     : s.phase === 'waiting' ? '双方准备后，黑棋先行' : s.phase === 'finished' ? '结果由服务端确认' : text;
   button('ready').hidden = s.phase !== 'waiting';
-  button('ready').textContent = own.ready ? '已准备，等对方' : '准备好了';
+  button('ready').textContent = own.ready ? '准备好啦！等对方' : '准备好啦！';
+  el('readyNotice').hidden = s.phase !== 'waiting' || !s.players[2 - s.seat].ready;
   button('ready').disabled = busy || !connected || !own.synced || own.ready || !s.players[1].name || !!uncertain;
   button('rematch').hidden = s.phase !== 'finished';
   button('rematch').textContent = own.ready ? '已同意，等对方' : '再来一局 · 交换黑白';
