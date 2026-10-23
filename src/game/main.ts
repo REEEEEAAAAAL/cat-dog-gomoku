@@ -10,12 +10,30 @@ const el = (id: string) => document.getElementById(id)!;
 const button = (id: string) => el(id) as HTMLButtonElement;
 const input = (id: string) => el(id) as HTMLInputElement;
 const compactLayout = window.matchMedia('(max-width:760px)');
+const desktopLayout = window.matchMedia('(min-width:900px)');
+function positionDesktopActions() {
+  const panel = el('desktopActions');
+  panel.hidden = !desktopLayout.matches;
+  el('roomAside').insertBefore(el('rules'), panel);
+  if (desktopLayout.matches) {
+    for (const id of ['interactionControls', 'moveControls', 'leave']) panel.appendChild(el(id));
+  } else {
+    el('boardArea').appendChild(el('moveControls'));
+    el('mobileActions').appendChild(el('interactionControls'));
+    el('roomAside').insertBefore(el('rules'), panel);
+    el('roomAside').insertBefore(el('leave'), panel);
+  }
+}
+desktopLayout.addEventListener('change', positionDesktopActions);
+positionDesktopActions();
+button('previousReactions').onclick = () => el('reactions').scrollBy({ left:-132, behavior:'smooth' });
+button('nextReactions').onclick = () => el('reactions').scrollBy({ left:132, behavior:'smooth' });
 if (typeof CSS !== 'undefined' && typeof CSS.registerProperty === 'function') document.documentElement.classList.add('smooth-turn');
 const client = createId();
 const roomPattern = /^(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[a-f0-9]{10})$/i;
 let storedRoom = localStorage.getItem('gomoku.room') || '';
 const invitation = location.hash.slice(1);
-let animal: 'dog' | 'cat' = 'dog';
+let animal: 'dog' | 'cat' = 'cat';
 let invited = false;
 let invitationInfo: InvitationInfo | null = null;
 let room = '';
@@ -450,7 +468,7 @@ const svgLines = Array.from({ length: 15 }, (_, i) => `<path d="M.5 ${i + .5}H14
 el('boardLines').innerHTML = `<g stroke="#91794f" stroke-width=".025">${svgLines}</g>${[[3, 3], [11, 3], [7, 7], [3, 11], [11, 11]].map(([x, y]) => `<circle cx="${x + .5}" cy="${y + .5}" r=".07" fill="#91794f"/>`).join('')}`;
 el('dog').innerHTML = `${avatar('dog')}<span>狗狗</span>`;
 el('cat').innerHTML = `${avatar('cat')}<span>猫猫</span>`;
-el('introArt').innerHTML = avatar('dog') + avatar('cat');
+el('introArt').innerHTML = avatar('cat') + avatar('dog');
 for (const value of ['dog', 'cat'] as const) button(value).onclick = () => {
   if (invited && invitationInfo?.animal !== value) return;
   animal = value; input('nickname').placeholder = value === 'dog' ? '狗狗' : '猫猫';

@@ -117,8 +117,17 @@ test('home supports narrow phones and desktop without overflow', async ({ page }
   await enter(page);
   for (const width of [320, 360, 390, 430, 1280]) {
     await page.setViewportSize({ width, height: 844 });
+    const cat = await page.locator('#cat').boundingBox(), dog = await page.locator('#dog').boundingBox();
+    expect(cat!.x).toBeLessThan(dog!.x);
+    expect(await page.locator('#introArt .avatar').first().evaluate(node => node.outerHTML)).toBe(await page.locator('#cat .avatar').evaluate(node => node.outerHTML));
+    expect(await page.locator('#introArt .avatar').last().evaluate(node => node.outerHTML)).toBe(await page.locator('#dog .avatar').evaluate(node => node.outerHTML));
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     expect((await page.locator('#create').boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    const mark = await page.locator('.brand-mark').evaluate(node => {
+      const black = getComputedStyle(node, '::before'), white = getComputedStyle(node.querySelector('span')!);
+      return { blackWidth:black.width, blackHeight:black.height, whiteWidth:white.width, whiteHeight:white.height, radius:white.borderRadius };
+    });
+    expect(mark).toEqual({ blackWidth:'20px', blackHeight:'20px', whiteWidth:'20px', whiteHeight:'20px', radius:'50%' });
   }
 });
 
@@ -397,6 +406,10 @@ test('mouse previews and moves only once after confirmation and server acknowled
     let moves=0;
     p.on('request',r=>{if(r.url().endsWith('/rpc/gomoku_command') && r.postDataJSON()?.p_action==='move') moves++;});
     const cell=p.locator('#board button[data-x="7"][data-y="7"]');
+    await cell.hover();
+    expect(await cell.evaluate(node => getComputedStyle(node, '::before').borderRadius)).toBe('50%');
+    await expect(p.locator('.rules-block')).toContainText('先点选预览，再确认落子');
+    await expect(p.locator('.rules-block')).not.toContainText('电脑和手机都');
     await expect(p.locator('#selfPlayer .turn-orbit')).toBeVisible();
     await expect(p.locator('#selfPlayer .turn-orbit')).toHaveCSS('background-image', /conic-gradient/);
     const initialAngle = await p.locator('.turn-orbit').evaluate(node => getComputedStyle(node).getPropertyValue('--turn-angle'));
@@ -407,8 +420,9 @@ test('mouse previews and moves only once after confirmation and server acknowled
     await p.emulateMedia({ reducedMotion: 'no-preference' });
     await cell.click(); await expect(p.locator('#board .preview')).toHaveCount(1);
     await p.screenshot({ path: 'docs/internal/game-preview-orbit.png', fullPage: true });
-    const controls = await p.locator('#moveControls').boundingBox(), boardBox = await p.locator('#board').boundingBox();
-    expect(Math.abs(controls!.y + controls!.height - boardBox!.y - boardBox!.height)).toBeLessThan(2);
+    const controls = await p.locator('#moveControls').boundingBox(), boardBox = await p.locator('.board-wrap').boundingBox();
+    const bottomLine = boardBox!.y + boardBox!.height + 5;
+    expect(Math.abs(controls!.y + controls!.height - bottomLine)).toBeLessThan(2);
     expect(controls!.x).toBeGreaterThan(boardBox!.x + boardBox!.width);
     for (const width of [900, 1024, 1280]) {
       await p.setViewportSize({ width, height: 900 });
@@ -416,11 +430,54 @@ test('mouse previews and moves only once after confirmation and server acknowled
       const fixed = await p.locator('#moveControls').boundingBox(), grid = await p.locator('#board').boundingBox();
       const hint = await p.locator('#selectionHint').boundingBox(), confirm = await p.locator('#confirm').boundingBox(), cancel = await p.locator('#cancel').boundingBox();
       const aside = await p.locator('.room-aside').boundingBox();
-      expect(Math.abs(fixed!.y + fixed!.height - grid!.y - grid!.height)).toBeLessThan(2);
+      const opponent = await p.locator('#opponentPlayer').boundingBox(), self = await p.locator('#selfPlayer').boundingBox();
+      const actions = await p.locator('#interactionControls').boundingBox(), leave = await p.locator('#leave').boundingBox();
+      const frame = await p.locator('.board-wrap').boundingBox();
+      const line = frame!.y + frame!.height + 5;
+      expect(Math.abs(fixed!.y + fixed!.height - line)).toBeLessThan(2);
+      for (const item of [confirm!, cancel!, hint!]) expect(Math.abs(item.y + item.height - line)).toBeLessThan(2);
+      expect(Math.abs(confirm!.x - aside!.x)).toBeLessThan(2);
+      expect(Math.abs(grid!.x + grid!.width - opponent!.x - opponent!.width)).toBeLessThan(2);
+      expect(Math.abs(grid!.x + grid!.width - self!.x - self!.width)).toBeLessThan(2);
+      expect(actions!.y + actions!.height).toBeLessThan(confirm!.y - 10);
+      expect(Math.abs(actions!.x - confirm!.x)).toBeLessThan(2);
+      expect(leave!.x).toBeGreaterThan(self!.x + self!.width + 30);
+      expect(leave!.y).toBeGreaterThan(hint!.y + hint!.height);
+      expect(leave!.y - hint!.y - hint!.height).toBeGreaterThanOrEqual(17);
+      expect(Math.abs(leave!.y + leave!.height - self!.y - self!.height)).toBeLessThan(2);
+      expect(Math.abs(leave!.x + leave!.width - hint!.x - hint!.width)).toBeLessThan(2);
+      const undo = await p.locator('#undo').boundingBox(), picker = await p.locator('.reaction-picker').boundingBox();
+      const rules = await p.locator('#rules').boundingBox();
+      expect(Math.abs(undo!.x - confirm!.x)).toBeLessThan(2);
+      expect(picker!.x).toBeGreaterThan(undo!.x + undo!.width);
+      expect(actions!.y - rules!.y - rules!.height).toBeGreaterThan(24);
+      expect(confirm!.y - actions!.y - actions!.height).toBeGreaterThanOrEqual(23);
+      const invite = await p.locator('#invitePanel').boundingBox(), roomTag = await p.locator('.room-tag').boundingBox();
+      expect(Math.abs(invite!.y - roomTag!.y)).toBeLessThan(2);
       expect(cancel!.x).toBeGreaterThan(confirm!.x + confirm!.width);
       expect(hint!.x - cancel!.x - cancel!.width).toBeGreaterThanOrEqual(23);
       expect(Math.abs(hint!.x + hint!.width - aside!.x - aside!.width)).toBeLessThan(2);
     }
+    await p.setViewportSize({ width:390, height:844 });
+    await expect(p.locator('#mobileActions > #interactionControls')).toHaveCount(1);
+    await expect(p.locator('#roomAside > #leave')).toHaveCount(1);
+    expect(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await p.setViewportSize({ width:1280, height:900 });
+    const reactions = p.locator('#reactions');
+    await reactions.evaluate(node => { node.scrollLeft=0; });
+    await expect(p.locator('#reactions button').last()).not.toBeInViewport();
+    await p.locator('#nextReactions').click();
+    await expect.poll(() => reactions.evaluate(node => node.scrollLeft)).toBeGreaterThan(0);
+    await expect(p.locator('#reactions button').last()).toBeInViewport();
+    await p.locator('#previousReactions').click();
+    await expect.poll(() => reactions.evaluate(node => node.scrollLeft)).toBe(0);
+    await p.screenshot({ path:'docs/internal/game-desktop-actions.png', fullPage:true });
+    await p.locator('#leave').click();
+    await expect(p.locator('#leaveDialog')).toBeVisible();
+    await p.locator('#stay').click();
+    await expect(p.locator('#leaveDialog')).not.toBeVisible();
+    await p.locator('#reactions button[data-emoji="heart"]').click();
+    await expect(p.locator('#selfPlayer .reaction-bubble')).toHaveText('❤️');
     await p.locator('#board button[data-x="8"][data-y="7"]').click();
     await expect(p.locator('#selectionHint')).toContainText('I8'); expect(moves).toBe(0);
     let release=()=>{}; const held=new Promise<void>(resolve=>{release=resolve;});
