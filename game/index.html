@@ -5,19 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#F6F5EF" />
     <meta name="description" content="属于猫猫和狗狗的双人五子棋。分享一个链接，一起下一局。" />
-    <title>猫猫与狗狗 · 五子棋</title>
+    <title>猫狗五子棋</title>
   </head>
   <body>
     <div class="shell">
-      <header class="masthead"><a href="./" class="brand"><span class="brand-mark" aria-hidden="true">●<span>○</span></span><span>猫猫与狗狗<small>CAT & DOG GOMOKU</small></span></a></header>
+      <header class="masthead"><a href="./" class="brand"><span class="brand-mark" aria-hidden="true">●<span>○</span></span><span>猫狗五子棋<small>CAT & DOG GOMOKU</small></span></a></header>
       <main>
         <section id="home" class="home">
           <div class="intro"><span class="eyebrow">OUR LITTLE GAME</span><h1>距离再远，<br>也能一起下棋。</h1><p>选一个身份，邀请另一个人。<br>不需要注册，连成五颗就赢。</p><div class="intro-art" id="introArt" aria-hidden="true"></div><span class="intro-caption">黑棋先手 · 每步 60 秒 · 每局交换黑白</span></div>
-          <div class="entry-panel"><h2 id="entryTitle">今天，你是谁？</h2><div class="identity-picker" role="group" aria-label="选择身份"><button id="dog" type="button" aria-pressed="true"></button><button id="cat" type="button" aria-pressed="false"></button></div>
+          <div class="entry-panel" id="entryPanel"><h2 id="entryTitle">今天，你是谁？</h2><p id="invitationRole" role="status" hidden></p><div id="identityPicker" class="identity-picker" role="group" aria-label="选择身份"><button id="dog" type="button" aria-pressed="true"></button><button id="cat" type="button" aria-pressed="false"></button></div>
             <label for="nickname">你的昵称</label><input id="nickname" maxlength="24" placeholder="狗狗" autocomplete="nickname" />
             <button id="create" class="primary wide" disabled>创建房间</button>
-            <div class="or"><span>或加入对方的房间</span></div>
-            <form id="joinForm"><label for="roomInput">房间码</label><div class="join-row"><input id="roomInput" maxlength="36" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="输入 10 位房间码" /><button id="join" type="submit" disabled>加入</button></div></form>
+            <div id="joinEntry"><h3 id="joinTitle" hidden>加入TA的房间</h3><button id="retryInvitation" type="button" hidden>重新确认角色</button><div class="or"><span>或加入对方的房间</span></div>
+            <form id="joinForm"><label for="roomInput">房间码</label><div class="join-row"><input id="roomInput" maxlength="36" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="输入 10 位房间码" /><button id="join" type="submit" disabled>加入</button></div></form></div>
             <button id="resume" class="text-button wide" hidden>继续上次对局</button>
             <p class="entry-hint">邀请链接仅供两人使用，加入后由房主确认。</p>
           </div>
@@ -35,9 +35,9 @@
             <div class="interaction-controls"><button id="undo" disabled>申请悔棋</button><div id="reactions" class="reactions" role="group" aria-label="发送表情"></div></div>
           </div>
           <aside class="room-aside">
-            <div id="pendingPanel" class="aside-block" hidden><h2>等房主确认</h2><p>加入申请已送达，确认后就能看到棋盘。</p><button id="cancelApplication" class="text-button">撤回申请</button></div>
-            <div id="applicationPanel" class="aside-block" hidden><h2>有人来啦</h2><p id="applicantName"></p><div class="button-row"><button id="approve" class="primary">确认加入</button><button id="reject">拒绝</button></div></div>
-            <div id="lobbySlot"><div id="lobbyPanel" class="aside-block"><h2 id="lobbyTitle">等另一个人来</h2><p id="lobbyText">把邀请链接发给对方，房主确认后，双方准备就能开局。</p><p id="readyNotice" class="ready-notice" role="status" aria-live="polite" hidden>对方准备好了哦~</p><button id="ready" class="primary wide" disabled>准备好啦！</button><button id="rematch" class="primary wide" hidden>再来一局</button><button id="homeReturn" class="primary wide" hidden>返回首页</button></div></div>
+            <div id="pendingPanel" class="aside-block" hidden><h2>等房主确认ing...</h2><p>加入申请已送达！确认后就能看到棋局。再稍微等一下下哦~</p><button id="cancelApplication" class="text-button">撤回申请</button></div>
+            <div id="applicationPanel" class="aside-block" hidden><h2>有人来啦！！</h2><p id="applicantName"></p><div class="button-row"><button id="approve" class="primary">确认加入</button><button id="reject">拒绝</button></div></div>
+            <div id="lobbySlot"><div id="lobbyPanel" class="aside-block"><h2 id="lobbyTitle">等另一个人来ing...</h2><p id="lobbyText">把邀请链接发给对方，房主确认后，双方准备就能开局。</p><p id="readyNotice" class="ready-notice" role="status" aria-live="polite" hidden>对方准备好了哦~</p><button id="ready" class="primary wide" disabled>准备好啦！</button><button id="rematch" class="primary wide" hidden>再来一局</button><button id="homeReturn" class="primary wide" hidden>返回首页</button></div></div>
             <div id="invitePanel" class="aside-block"><h2>邀请TA一起下棋吧~</h2><p>复制链接发给对方，也可以直接分享房间码。</p><div class="copy-actions"><button id="invite">复制邀请链接</button><button id="copyCode">复制房间码</button></div><p id="copyStatus" class="copy-status" role="status" aria-live="polite"></p><textarea id="copyFallback" rows="3" readonly aria-label="邀请链接，长按复制" hidden></textarea></div>
             <details class="rules-block" open><summary>对局规则</summary><p>黑棋先手，横竖斜连成五颗或更多就赢。无禁手。</p><p>每步 60 秒，行棋超时判负。断线后暂停，超过 5 分钟未恢复则中止，不计输赢。</p><p>电脑和手机都先点选预览，再确认落子。键盘方向键选点，回车预览后确认。</p></details>
             <button id="leave" class="text-button leave">离开并关闭房间</button>

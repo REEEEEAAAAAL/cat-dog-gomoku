@@ -1,10 +1,10 @@
 import './style.css';
 import { avatar } from './avatars';
-import { login, send } from './api';
+import { login, send, inspectInvitation } from './api';
 import { clockText, createId } from './rules';
 import type { Point } from './rules';
 import { errorMessage, reactions, RpcError } from './protocol';
-import type { Action, Command, Reaction, Reply, Snapshot } from './protocol';
+import type { Action, Command, Reaction, Reply, Snapshot, InvitationInfo } from './protocol';
 
 const el = (id: string) => document.getElementById(id)!;
 const button = (id: string) => el(id) as HTMLButtonElement;
@@ -16,6 +16,8 @@ const roomPattern = /^(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9
 let storedRoom = localStorage.getItem('gomoku.room') || '';
 const invitation = location.hash.slice(1);
 let animal: 'dog' | 'cat' = 'dog';
+let invited = false;
+let invitationInfo: InvitationInfo | null = null;
 let room = '';
 let snapshot: Snapshot | null = null;
 let pending = false;
@@ -128,7 +130,7 @@ function playerElements(s: Snapshot) {
     node.className = `player ${s.phase === 'running' && s.turnSeat === seat ? 'active' : ''}`;
     node.innerHTML = `${avatar(p.animal)}<div class="player-info"><span class="player-name"></span><span class="player-detail"><i class="color-dot ${s.blackSeat === seat ? '' : 'white'}"></i><span></span></span></div>`;
     if (s.phase === 'running' && s.turnSeat === seat) {
-      node.style.setProperty('--turn-phase', `${-(performance.now() / 1000 % 5)}s`);
+      node.style.setProperty('--turn-phase', `${-(performance.now() / 1000 % 2)}s`);
       node.insertAdjacentHTML('beforeend', '<span class="turn-orbit" aria-hidden="true"></span>');
     }
     node.querySelector('.player-name')!.textContent = p.name ? `${p.name}${seat === s.seat ? '（你）' : '（对方）'}` : '等待对方入座';
@@ -171,6 +173,17 @@ compactLayout.addEventListener('change', positionLobby);
 
 function render() {
   positionLobby();
+  el('entryPanel').classList.toggle('invited', invited);
+  el('joinTitle').hidden = !invited;
+  el('invitationRole').hidden = !invited;
+  el('identityPicker').hidden = invited && !invitationInfo;
+  el('invitationRole').textContent = invitationInfo ? `房间剩余角色：${invitationInfo.animal === 'cat' ? '猫猫' : '狗狗'}，已为你选好。` : busy ? '正在确认房间剩余角色…' : '暂时无法确认房间角色，请重试。';
+  button('retryInvitation').hidden = !invited || !!invitationInfo || busy;
+  for (const value of ['dog', 'cat'] as const) {
+    button(value).hidden = invited && invitationInfo?.animal !== value;
+    button(value).disabled = invited && invitationInfo?.animal !== value;
+  }
+  button('create').textContent = invited ? '改为创建房间' : '创建房间';
   el('home').hidden = !!room;
   el('room').hidden = !room;
   const s = snapshot;
@@ -182,7 +195,7 @@ function render() {
   button('reconnect').hidden = !room || busy || s?.phase === 'closed' || (connected && !superseded);
   button('retry').hidden = !uncertain || busy;
   button('create').disabled = busy;
-  button('join').disabled = busy;
+  button('join').disabled = busy || (invited && !invitationInfo);
   button('resume').hidden = !roomPattern.test(storedRoom);
   button('cancelApplication').disabled = busy;
   button('homeReturn').hidden = !s || s.phase !== 'closed';
@@ -202,7 +215,7 @@ function render() {
     title = s.undoRequest ? '悔棋请求待处理' : '等你们重新连上';
     text = s.undoRequest ? '等对方回应，双方暂时不能落子。' : '棋盘已保存。双方恢复连接并同步后，继续剩余时间。';
   } else if (s.phase === 'waiting') {
-    title = s.players[1].name ? '都准备好，就开局' : '等另一个人来'; text = '分享邀请链接，房主确认加入后，双方点击准备。';
+    title = s.players[1].name ? '都准备好，开一局！' : '等另一个人来ing...'; text = '分享邀请链接，房主确认加入后，双方点击准备。';
   } else if (s.phase === 'closed') {
     title = '房间已关闭'; text = '本房间不能继续，可以返回首页再建一间。';
   } else {
@@ -233,7 +246,7 @@ function render() {
     el('resultReason').textContent = s.reason === 'timeout' ? `${turnName}行棋超时` : '五子连线，这一局好精彩';
   }
   el('resultPanel').hidden = !resultKey || dismissedResult === resultKey;
-  if (s.application) el('applicantName').textContent = `${s.application.name} 想加入你的房间。请确认是对方本人。`;
+  if (s.application) el('applicantName').textContent = `${s.application.name}想加入你的房间👀请确认是对方本人哦`;
   for (const id of ['approve', 'reject', 'leave']) button(id).disabled = busy || !connected || !!uncertain;
   button('confirm').disabled = !selection || !canMove();
   button('cancel').disabled = !selection || busy;
@@ -253,11 +266,6 @@ function render() {
     node.disabled = busy || !connected || !!uncertain || s.phase === 'closed' || !s.players.every(p => p.online && p.synced);
   }
   el('selectionHint').textContent = selection ? `已选 ${String.fromCharCode(65 + selection.x)}${selection.y + 1}，确认后才落子` : '点选交叉点，再确认落子';
-  el('moveControls').classList.toggle('has-selection', !!selection);
-  if (selection) {
-    el('moveControls').style.setProperty('--point-x', `${(selection.x + .5) / 15 * 100}%`);
-    el('moveControls').style.setProperty('--point-y', `${(selection.y + .5) / 15 * 100}%`);
-  }
   renderBoard(); renderClock();
 }
 
@@ -367,7 +375,7 @@ async function connect(action: 'create' | 'apply' | 'connect', target: string) {
   const data = action === 'create' ? { name: name || (animal === 'dog' ? '狗狗' : '猫猫'), animal }
     : action === 'apply' ? { name: name || '朋友', autoName: !name } : {};
   await exchange(command(action, data)); await synchronize(); recoverUncertain();
-  notice(pending ? '申请已送达，等房主确认。' : uncertain ? '已恢复棋盘，请重试上次操作以核对结果。' : '连接正常。');
+  notice(pending ? '加入申请已送达！等房主确认ing...' : uncertain ? '已恢复棋盘，请重试上次操作以核对结果。' : '连接正常。');
 }
 
 async function refreshRoom() {
@@ -382,7 +390,7 @@ async function refreshRoom() {
 }
 
 function connectionStatus() {
-  if (connected) notice(snapshot?.phase === 'closed' ? '房间已关闭。' : pending ? '申请已送达，等房主确认。' : '连接正常。');
+  if (connected) notice(snapshot?.phase === 'closed' ? '房间已关闭。' : pending ? '加入申请已送达！等房主确认ing...' : '连接正常。');
 }
 
 async function poll() {
@@ -444,13 +452,39 @@ el('dog').innerHTML = `${avatar('dog')}<span>狗狗</span>`;
 el('cat').innerHTML = `${avatar('cat')}<span>猫猫</span>`;
 el('introArt').innerHTML = avatar('dog') + avatar('cat');
 for (const value of ['dog', 'cat'] as const) button(value).onclick = () => {
+  if (invited && invitationInfo?.animal !== value) return;
   animal = value; input('nickname').placeholder = value === 'dog' ? '狗狗' : '猫猫';
   button('dog').setAttribute('aria-pressed', String(value === 'dog')); button('cat').setAttribute('aria-pressed', String(value === 'cat'));
 };
-button('create').onclick = () => { void run(() => connect('create', createId())); };
+function setInvitationMode(active: boolean) {
+  invited = active; invitationInfo = null;
+  const entry = el('joinEntry');
+  el('entryPanel').insertBefore(entry, active ? button('create') : button('create').nextSibling);
+  el('entryTitle').textContent = active ? '对方在等你，一起入座' : '今天，你是谁？';
+  render();
+}
+async function loadInvitation() {
+  const target = input('roomInput').value.trim(), active = epoch;
+  invitationInfo = null; render();
+  await login();
+  const info = await inspectInvitation({ ...command('preview'), p_room: target });
+  if (!invited || epoch !== active || target !== input('roomInput').value.trim()) return;
+  invitationInfo = info; animal = info.animal;
+  input('nickname').placeholder = animal === 'cat' ? '猫猫' : '狗狗';
+  button('dog').setAttribute('aria-pressed', String(animal === 'dog'));
+  button('cat').setAttribute('aria-pressed', String(animal === 'cat')); render();
+}
+input('roomInput').addEventListener('input', () => { if (invited) { invitationInfo = null; render(); } });
+input('roomInput').addEventListener('change', () => { if (invited && roomPattern.test(input('roomInput').value.trim())) void run(loadInvitation); });
+button('retryInvitation').onclick = () => { void run(loadInvitation); };
+button('create').onclick = () => {
+  if (invited) { epoch++; setInvitationMode(false); history.replaceState(null, '', location.pathname); return; }
+  void run(() => connect('create', createId()));
+};
 el('joinForm').onsubmit = event => {
   event.preventDefault(); const target = input('roomInput').value.trim();
   if (!roomPattern.test(target)) { notice('请输入 10 位房间码，或打开对方的邀请链接', true); return; }
+  if (invited && !invitationInfo) { feedback('请先等房间角色确认完成，再加入。', true); return; }
   void run(() => connect('apply', target));
 };
 button('resume').onclick = () => { void run(() => connect('connect', storedRoom)); };
@@ -551,8 +585,7 @@ window.setInterval(() => { void poll(); }, 5000);
 window.setInterval(renderClock, 250);
 if (roomPattern.test(invitation)) {
   input('roomInput').value = invitation;
-  el('entryTitle').textContent = '对方在等你，一起入座';
-  input('nickname').placeholder = '留空使用狗狗或猫猫';
   if (invitation === storedRoom) void run(() => connect('connect', invitation));
+  else { setInvitationMode(true); void run(loadInvitation); }
 }
 render();

@@ -1,7 +1,7 @@
 import cloudbase from '@cloudbase/js-sdk';
 import { fetchJsonWithTimeout } from '../../diagnostics/cloudbase/http';
-import { isReply, rpcError } from './protocol';
-import type { Command, Reply } from './protocol';
+import { isReply, isInvitationInfo, rpcError } from './protocol';
+import type { Command, Reply, InvitationInfo } from './protocol';
 
 const env = import.meta.env.VITE_CLOUDBASE_ENV_ID as string | undefined;
 const accessKey = import.meta.env.VITE_CLOUDBASE_PUBLISHABLE_KEY as string | undefined;
@@ -17,7 +17,7 @@ export async function login(): Promise<void> {
   }
 }
 
-export async function send(command: Command): Promise<Reply> {
+async function request(command: Command): Promise<unknown> {
   if (!app) throw new Error('尚未配置云端环境');
   const session = await app.auth().getSession();
   const token = session.data.session?.access_token;
@@ -29,6 +29,17 @@ export async function send(command: Command): Promise<Reply> {
   if (!response.ok) {
     throw rpcError(body);
   }
+  return body;
+}
+
+export async function send(command: Command): Promise<Reply> {
+  const body = await request(command);
   if (!isReply(body)) throw new Error('返回数据不完整，请刷新重试');
+  return body;
+}
+
+export async function inspectInvitation(command: Command): Promise<InvitationInfo> {
+  const body = await request(command);
+  if (!isInvitationInfo(body)) throw new Error('无法确认房间角色，请重试');
   return body;
 }

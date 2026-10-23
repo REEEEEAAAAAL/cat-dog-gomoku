@@ -52,6 +52,8 @@ beforeAll(async () => {
   await db.exec(lifecycle.replaceAll('clock_timestamp()', 'public.test_now()'));
   const feedback = await readFile('cloudbase/migrations/20261023040000_interaction_feedback.sql', 'utf8');
   await db.exec(feedback.replaceAll('clock_timestamp()', 'public.test_now()'));
+  const preview = await readFile('cloudbase/migrations/20261023050000_invitation_preview.sql', 'utf8');
+  await db.exec(preview.replaceAll('clock_timestamp()', 'public.test_now()'));
 });
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
@@ -60,6 +62,23 @@ beforeEach(async () => {
 });
 
 describe('game RPC on isolated PostgreSQL with controlled server clock', () => {
+  it.each(['cat', 'dog'])('previews only the remaining role for a %s host without changing the room', async animal => {
+    await db.query('UPDATE public.gomoku_rooms SET owner_animal=$1 WHERE id=$2', [animal, room]);
+    const before = await db.query('SELECT to_jsonb(r) AS room FROM public.gomoku_rooms r WHERE id=$1', [room]);
+    await as(2);
+    const metadata = await db.query<{ info: { animal: string } }>("SELECT public.gomoku_command($1,'preview',$2) AS info", [room, clients[1]]);
+    expect(metadata.rows[0].info).toEqual({ preview: true, room, code: current.code, animal: animal === 'cat' ? 'dog' : 'cat' });
+    const after = await db.query('SELECT to_jsonb(r) AS room FROM public.gomoku_rooms r WHERE id=$1', [room]);
+    expect(after.rows).toEqual(before.rows);
+    await call('apply', { name: '朋友', autoName: true });
+    await as(1); await call('snapshot'); await call('approve', { application: current.application?.id });
+    await as(2); await call('connect');
+    expect(current.players[1].animal).toBe(metadata.rows[0].info.animal);
+    await user('third-visitor');
+    await expect(db.query("SELECT public.gomoku_command($1,'preview',$2)", [room, clients[1]])).rejects.toThrow('room_full');
+    await as(1); await call('snapshot'); await sync(); await call('leave');
+    await expect(db.query("SELECT public.gomoku_command($1,'preview',$2)", [room, clients[0]])).rejects.toThrow('room_closed');
+  });
   it('requires native identity and a signed anonymous visitor claim', async () => {
     await user('', 'anon'); await expect(call('snapshot')).rejects.toThrow('unauthorized');
     await user(`player-1-${room}`, 'anon'); await expect(call('snapshot')).rejects.toThrow('unauthorized');

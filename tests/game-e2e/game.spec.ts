@@ -19,8 +19,8 @@ async function enter(page: Page, path = './') {
     await expect(page.locator('#create')).toBeVisible();
     if (path !== './') await page.goto(path);
   }
-  await expect(page).toHaveTitle('猫猫与狗狗 · 五子棋');
-  await expect(page.locator('#dog svg')).toBeVisible();
+  await expect(page).toHaveTitle('猫狗五子棋');
+  await expect(page.locator('#introArt .avatar')).toHaveCount(2);
   await expect(page.locator('#create')).toHaveCSS('min-height', '46px');
 }
 
@@ -44,6 +44,11 @@ async function pair(browser: Browser, mobile = false, bothDesktop = false, verif
   await a.locator('#create').click();
   await expect(a.locator('#roomCode')).toHaveText(/^[A-F0-9]{10}$/);
   await enter(b, `./${new URL(a.url()).hash}`);
+  await expect(b.locator('#cat')).toBeVisible();
+  await expect(b.locator('#dog')).toBeHidden();
+  await expect(b.locator('#invitationRole')).toContainText('猫猫');
+  const joinBox = await b.locator('#joinEntry').boundingBox(), createBox = await b.locator('#create').boundingBox();
+  expect(joinBox!.y + joinBox!.height).toBeLessThanOrEqual(createBox!.y);
   await b.locator('#join').click();
   await expect(b.locator('#pendingPanel')).toBeVisible();
   await expect(a.locator('#applicationPanel')).toBeVisible();
@@ -185,7 +190,7 @@ test('two players complete a real game, approve entry, recover a lost acknowledg
     await a.setViewportSize({ width: 1280, height: 900 });
     await a.screenshot({ path: 'docs/internal/game-desktop.png', fullPage: true });
     const outsider = await browser.newContext(); const c = await outsider.newPage();
-    try { await enter(c, `./${new URL(a.url()).hash}`); await c.locator('#join').click(); await expect(c.locator('#notice')).toContainText('已有两位'); }
+    try { await enter(c, `./${new URL(a.url()).hash}`); await expect(c.locator('#notice')).toContainText('已有两位'); }
     finally { await outsider.close(); }
     expect(game.errors).toEqual([]);
     await a.locator('#leave').click(); await a.locator('#confirmLeave').click();
@@ -398,12 +403,24 @@ test('mouse previews and moves only once after confirmation and server acknowled
     await expect.poll(() => p.locator('.turn-orbit').evaluate(node => getComputedStyle(node).getPropertyValue('--turn-angle'))).not.toBe(initialAngle);
     await expect(p.locator('#opponentPlayer .turn-orbit')).toHaveCount(0);
     await p.emulateMedia({ reducedMotion: 'reduce' });
-    await expect(p.locator('.turn-orbit')).toBeHidden();
+    await expect(p.locator('.turn-orbit')).toBeVisible();
     await p.emulateMedia({ reducedMotion: 'no-preference' });
     await cell.click(); await expect(p.locator('#board .preview')).toHaveCount(1);
     await p.screenshot({ path: 'docs/internal/game-preview-orbit.png', fullPage: true });
-    const controls = await p.locator('#moveControls').boundingBox(), selected = await cell.boundingBox();
-    expect(Math.abs(controls!.y - selected!.y)).toBeLessThan(100);
+    const controls = await p.locator('#moveControls').boundingBox(), boardBox = await p.locator('#board').boundingBox();
+    expect(Math.abs(controls!.y + controls!.height - boardBox!.y - boardBox!.height)).toBeLessThan(2);
+    expect(controls!.x).toBeGreaterThan(boardBox!.x + boardBox!.width);
+    for (const width of [900, 1024, 1280]) {
+      await p.setViewportSize({ width, height: 900 });
+      expect(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      const fixed = await p.locator('#moveControls').boundingBox(), grid = await p.locator('#board').boundingBox();
+      const hint = await p.locator('#selectionHint').boundingBox(), confirm = await p.locator('#confirm').boundingBox(), cancel = await p.locator('#cancel').boundingBox();
+      const aside = await p.locator('.room-aside').boundingBox();
+      expect(Math.abs(fixed!.y + fixed!.height - grid!.y - grid!.height)).toBeLessThan(2);
+      expect(cancel!.x).toBeGreaterThan(confirm!.x + confirm!.width);
+      expect(hint!.x - cancel!.x - cancel!.width).toBeGreaterThanOrEqual(23);
+      expect(Math.abs(hint!.x + hint!.width - aside!.x - aside!.width)).toBeLessThan(2);
+    }
     await p.locator('#board button[data-x="8"][data-y="7"]').click();
     await expect(p.locator('#selectionHint')).toContainText('I8'); expect(moves).toBe(0);
     let release=()=>{}; const held=new Promise<void>(resolve=>{release=resolve;});
@@ -454,4 +471,37 @@ test('idle waiting pages stop polling and resume on activity', async ({page})=>{
   await page.locator('#roomCode').click();await page.clock.fastForward(5000);
   await expect.poll(()=>requests).toBeGreaterThan(0);
   await expect(page.locator('#notice')).toContainText('连接正常');
+});
+
+test('invited visitors see only the remaining dog role and a prominent join action', async ({ browser }) => {
+  test.skip(!process.env.GOMOKU_LOCAL_SQL && !process.env.GOMOKU_URL?.startsWith('http://127.0.0.1'));
+  const contexts = [await browser.newContext(), await browser.newContext({ viewport:{width:390,height:844},hasTouch:true })];
+  const [a,b] = await Promise.all(contexts.map(c=>c.newPage()));
+  try {
+    await enter(a); await a.locator('#cat').click(); await a.locator('#create').click();
+    await expect(a.locator('#roomCode')).toHaveText(/^[A-F0-9]{10}$/);
+    await enter(b, `./#${await a.locator('#roomCode').textContent()}`);
+    await expect(b.locator('#dog')).toBeVisible(); await expect(b.locator('#cat')).toBeHidden();
+    await expect(b.locator('#nickname')).toHaveAttribute('placeholder','狗狗');
+    await expect(a.locator('#applicationPanel')).toBeHidden();
+    for(const width of [320,390,430,1280]){
+      await b.setViewportSize({width,height:844});
+      expect(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      const join=await b.locator('#joinEntry').boundingBox(),create=await b.locator('#create').boundingBox();
+      expect(join!.y+join!.height).toBeLessThanOrEqual(create!.y);
+    }
+    await b.setViewportSize({width:390,height:844});
+    await b.screenshot({path:'docs/internal/game-invitation-role.png',fullPage:true});
+    await b.locator('#create').click();
+    await expect(b.locator('#dog')).toBeVisible();await expect(b.locator('#cat')).toBeVisible();
+    await expect(b.locator('#create')).toHaveText('创建房间');
+    await enter(b, `./#${await a.locator('#roomCode').textContent()}`);
+    await b.locator('#join').click();
+    await expect(b.locator('#pendingPanel h2')).toHaveText('等房主确认ing...');
+    await expect(b.locator('#pendingPanel p')).toHaveText('加入申请已送达！确认后就能看到棋局。再稍微等一下下哦~');
+    await expect(a.locator('#applicationPanel h2')).toHaveText('有人来啦！！');
+    await expect(a.locator('#applicantName')).toHaveText('狗狗想加入你的房间👀请确认是对方本人哦');
+    await a.locator('#approve').click();
+    await expect(b.locator('#selfPlayer')).toContainText('狗狗');
+  } finally {await finish(contexts);}
 });

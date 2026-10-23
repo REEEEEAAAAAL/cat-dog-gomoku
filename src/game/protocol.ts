@@ -2,7 +2,13 @@ import type { Move, Point, Seat } from './rules';
 
 export type Phase = 'waiting' | 'running' | 'paused' | 'finished' | 'closed';
 export type Action = 'create' | 'apply' | 'connect' | 'snapshot' | 'sync' | 'approve' | 'reject' | 'ready' | 'move' | 'rematch' | 'leave'
-  | 'undo_request' | 'undo_respond' | 'undo_cancel' | 'emoji' | 'withdraw';
+  | 'undo_request' | 'undo_respond' | 'undo_cancel' | 'emoji' | 'withdraw' | 'preview';
+export interface InvitationInfo { preview: true; room: string; code: string; animal: 'cat' | 'dog' }
+export function isInvitationInfo(value: unknown): value is InvitationInfo {
+  return typeof value === 'object' && value !== null && 'preview' in value && value.preview === true
+    && 'room' in value && typeof value.room === 'string' && 'code' in value && typeof value.code === 'string'
+    && 'animal' in value && (value.animal === 'cat' || value.animal === 'dog');
+}
 export const reactions = { plead: '🥺', cat: '😼', dog: '🐶', heart: '❤️', laugh: '😂', cry: '😭', angry: '😤', celebrate: '🎉' } as const;
 export type Reaction = keyof typeof reactions;
 export interface ReactionEvent { id: string; seat: Seat; emoji: Reaction; at: number }
