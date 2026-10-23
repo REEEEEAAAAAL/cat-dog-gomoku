@@ -43,8 +43,8 @@ function positionDesktopActions() {
 }
 desktopLayout.addEventListener('change', positionDesktopActions);
 positionDesktopActions();
-button('previousReactions').onclick = () => el('reactions').scrollBy({ left:-132, behavior:'smooth' });
-button('nextReactions').onclick = () => el('reactions').scrollBy({ left:132, behavior:'smooth' });
+button('previousReactions').onclick = () => el('reactions').scrollBy({ left:-(el('reactions').clientWidth + 3), behavior:'smooth' });
+button('nextReactions').onclick = () => el('reactions').scrollBy({ left:el('reactions').clientWidth + 3, behavior:'smooth' });
 if (typeof CSS !== 'undefined' && typeof CSS.registerProperty === 'function') document.documentElement.classList.add('smooth-turn');
 const client = createId();
 const roomPattern = /^(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[a-f0-9]{10})$/i;
@@ -72,6 +72,7 @@ const seenReactions = new Set<string>();
 const bubbles = new Map<number, { reaction: Reaction; until: number }>();
 let undoTarget = '';
 let undoProposal: Pick<Snapshot, 'version' | 'gameId'> | null = null;
+let resignGame: string | null = null;
 let resultKey = '';
 let dismissedResult = '';
 let feedbackTimer = 0;
@@ -122,6 +123,11 @@ function failure(error: unknown) {
 function notice(message: string, error = false) {
   if (lastStatus !== message) { el('notice').textContent = message; lastStatus = message; }
   el('connectionDot').className = `connection-dot ${error ? 'error' : connected ? 'online' : ''}`;
+}
+
+function canResign() {
+  return !!snapshot && ['running', 'paused'].includes(snapshot.phase) && connected && !busy && !uncertain
+    && snapshot.players[snapshot.seat - 1].synced && !document.hidden && performance.now() - lastReceiptAt < 15000;
 }
 
 function canMove() {
@@ -256,10 +262,11 @@ function render() {
     title = '房间已关闭'; text = '本房间不能继续，可以返回首页再建一间。';
   } else {
     title = s.reason === 'draw' ? '这一局，平分秋色' : s.reason === 'disconnect_timeout' ? '本局已中止，不计输赢' : `${winner}获胜！🎉`;
-    text = s.reason === 'timeout' ? `${turnName}超时，${winner}获胜。` : s.reason === 'five' ? '五子连线！要不要交换黑白再来一局？'
+    text = s.reason === 'resign' ? (s.winner === s.seat ? '对方决定投降，这局是你的啦～🎉' : '已认输，下局再来一决高下！💪')
+      : s.reason === 'timeout' ? `${turnName}超时，${winner}获胜。` : s.reason === 'five' ? '五子连线！要不要交换黑白再来一局？'
       : s.reason === 'disconnect_timeout' ? '断线等待超过 5 分钟。双方回来后，可以再来一局。' : '棋盘已满，双方都没有五子连线。';
   }
-  el('gameStatus').textContent = title;
+  el('gameStatus').textContent = s.reason === 'resign' && s.phase === 'finished' ? text : title;
   el('lobbyTitle').textContent = title;
   el('lobbyText').textContent = text;
   el('turnHint').textContent = s.phase === 'running' ? `第 ${s.moves.length + 1} 手 · ${s.turnSeat === s.blackSeat ? '黑棋' : '白棋'}行棋`
@@ -279,13 +286,18 @@ function render() {
     resultKey = nextResultKey;
     el('resultAvatar').innerHTML = s.winner ? avatar(s.players[s.winner - 1].animal) : '';
     el('resultTitle').textContent = `${winner}赢啦！！`;
-    el('resultReason').textContent = s.reason === 'timeout' ? `${turnName}行棋超时` : '五子连线，这一局好精彩哇！';
+    el('resultReason').textContent = s.reason === 'resign' ? `${s.players[2 - s.winner!].name}已认输✋️😭✋️` : s.reason === 'timeout' ? `${turnName}行棋超时` : '五子连线，这一局好精彩哇！';
   }
   el('resultPanel').hidden = !resultKey || dismissedResult === resultKey;
   if (s.application) el('applicantName').textContent = `${s.application.name}想加入你的房间👀请确认是对方本人哦！`;
   for (const id of ['approve', 'reject', 'leave']) button(id).disabled = busy || !connected || !!uncertain;
   button('confirm').disabled = !selection || !canMove();
   button('cancel').disabled = !selection || busy;
+  button('resign').disabled = !canResign();
+  button('confirmResign').disabled = !canResign() || resignGame !== s.gameId;
+  const resignDialog = el('resignDialog') as HTMLDialogElement;
+  if (resignDialog.open && (resignGame !== s.gameId || !['running', 'paused'].includes(s.phase))) resignDialog.close();
+  if (!['running', 'paused'].includes(s.phase)) (el('undoDialog') as HTMLDialogElement).close();
   button('undo').disabled = busy || !connected || !!uncertain || s.phase !== 'running' || own.undoLeft === 0
     || !s.players.every(p => p.online && p.synced) || !s.moves.some(m => m.seat === s.seat);
   const request = s.undoRequest;
@@ -397,7 +409,8 @@ async function mutate(action: Action, data: Record<string, unknown> = {}, retry 
   if (!reply.accepted && reply.rejection === 'state_conflict' && rebase && !retry && sameIntent && reply.gameId === request.p_game) {
     await synchronize(); await mutate(action, data, false, false); return;
   }
-  const message = reply.accepted ? action === 'move' ? '落子已保存，等对方下一步。' : '已同步，棋盘与对方保持一致。' : errorMessage(reply.rejection || '');
+  const message = reply.reason === 'resign' && reply.phase === 'finished' ? (reply.winner === reply.seat
+    ? '对方决定投降，这局是你的啦～🎉' : '已认输，下局再来一决高下！💪') : reply.accepted ? action === 'move' ? '落子已保存，等对方下一步。' : '已同步，棋盘与对方保持一致。' : errorMessage(reply.rejection || '');
   notice(message);
   if (!reply.accepted) feedback(message, true);
   await synchronize();
@@ -414,6 +427,7 @@ async function connect(action: 'create' | 'apply' | 'connect', target: string) {
     : action === 'apply' ? { name: name || '朋友', autoName: !name } : {};
   await exchange(command(action, data)); await synchronize(); recoverUncertain();
   notice(pending ? '加入申请已送达！等房主确认ing...' : uncertain ? '已恢复棋盘，请重试上次操作以核对结果。' : '连接正常。');
+  if (!pending && !uncertain) connectionStatus();
 }
 
 async function refreshRoom() {
@@ -428,7 +442,8 @@ async function refreshRoom() {
 }
 
 function connectionStatus() {
-  if (connected) notice(snapshot?.phase === 'closed' ? '房间已关闭。' : pending ? '加入申请已送达！等房主确认ing...' : '连接正常。');
+  if (connected) notice(snapshot?.phase === 'finished' && snapshot.reason === 'resign' ? (snapshot.winner === snapshot.seat
+    ? '对方决定投降，这局是你的啦～🎉' : '已认输，下局再来一决高下！💪') : snapshot?.phase === 'closed' ? '房间已关闭。' : pending ? '加入申请已送达！等房主确认ing...' : '连接正常。');
 }
 
 async function poll() {
@@ -541,6 +556,20 @@ button('approve').onclick = () => { void run(() => mutate('approve', { applicati
 button('reject').onclick = () => { void run(() => mutate('reject', { application: snapshot?.application?.id })); };
 button('confirm').onclick = () => { if (selection && canMove()) { const point = selection; void run(() => mutate('move', { x: point.x, y: point.y })); } };
 button('cancel').onclick = () => { selection = null; render(); };
+const resignDialog = el('resignDialog') as HTMLDialogElement;
+button('resign').onclick = () => {
+  if (!canResign()) return;
+  resignGame = snapshot!.gameId;
+  button('confirmResign').disabled = false;
+  resignDialog.showModal();
+};
+button('dismissResign').onclick = () => resignDialog.close();
+button('confirmResign').onclick = () => {
+  if (!canResign() || snapshot?.gameId !== resignGame) return;
+  const expected = { version: snapshot.version, gameId: resignGame };
+  resignDialog.close();
+  void run(() => mutate('resign', {}, false, false, expected));
+};
 const undoDialog = el('undoDialog') as HTMLDialogElement;
 button('undo').onclick = () => { void run(async () => {
   await exchange(command('snapshot')); await synchronize();

@@ -176,6 +176,7 @@ test('confirmed moves and undo sound once on both clients; refusal and restore s
     await a.reload(); await expect(a.locator('#board .stone')).toHaveCount(1); expect(await voices(a)).toEqual([]);
     await a.locator('#sound').click(); await a.locator('#sound').click();
     await a.evaluate(() => window.dispatchEvent(new Event('offline'))); await poll(a);
+    await poll(b); await poll(a);
     expect(await voices(a)).toEqual([]);
     await black.locator('#sound').click();
     await clear(black); await play(white, 8, 8);
@@ -234,4 +235,25 @@ test('server turn timeout plays opposite result melodies once on both clients', 
     }
     expect(game.errors).toEqual([]);
   } finally { await Promise.all(game.contexts.map(c => c.close())); }
+});
+
+
+test('resignation plays opposite melodies once and cancel or restored results stay silent', async ({ browser }) => {
+  const game = await pair(browser), {a,b} = game;
+  try {
+    await a.locator('#resign').click(); await a.locator('#dismissResign').click();
+    for (const page of [a,b]) expect(await count(page,'result')).toBe(0);
+    await a.locator('#resign').click(); await a.locator('#confirmResign').click();
+    for (const page of [a,b]) {
+      await expect(page.locator('#resultReason')).toContainText('已认输');
+      await expect.poll(() => count(page,'result')).toBe(4);
+      expect((await voices(page)).filter(v => v.kind === 'triangle').map(v => v.frequency)).toEqual(
+        page === a ? [659.25,587.33,523.25,392] : [523.25,659.25,783.99,1046.5]);
+      expect(await count(page,'move')).toBe(0);
+      await poll(page); expect(await count(page,'result')).toBe(4);
+      await page.reload(); await expect(page.locator('#resultPanel')).toBeVisible();
+      expect(await voices(page)).toEqual([]);
+    }
+    expect(game.errors).toEqual([]);
+  } finally {await Promise.all(game.contexts.map(context => context.close()));}
 });

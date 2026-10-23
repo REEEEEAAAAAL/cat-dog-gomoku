@@ -14,6 +14,7 @@
 - 连成五颗或更多棋子获胜。先预览位置，再确认落子，减少误触；支持鼠标、触摸与键盘。
 - 服务端管理每回合 60 秒计时，支持断线暂停与刷新恢复；断线五分钟仍未恢复时，本局中止，不判胜负。
 - 每人每局最多成功悔棋两次，双方先确认撤销范围，再由对方批准。
+- 开局后可随时认输，二次确认后由服务端保存结果，无需对方同意。
 - 双方同意后换色再来一局，另有八种固定表情、本地音效和可记住设置的静音开关。
 
 不提供匹配、观战、自由文字聊天或人机对战。邀请用于申请加入，不是玩家身份凭证。恢复对局需要原浏览器会话，其他浏览器不能接管身份。主动离开会为双方关闭房间，房间在 24 小时后过期。
@@ -111,9 +112,9 @@ tcb hosting deploy ./dist/cloudbase/game gomoku --env-id YOUR_ENV_ID --verify
 
 使用当前界面和真实 SQL 迁移，在本地双浏览器对局中截取。手机图使用模拟视口。
 
-<img src="docs/screenshots/desktop.png" alt="电脑端对局" width="700" />
+<img src="docs/screenshots/desktop-surrender.png" alt="电脑端对局" width="700" />
 
-<img src="docs/screenshots/mobile.png" alt="390 像素手机视口下的对局" width="260" />
+<img src="docs/screenshots/mobile-surrender.png" alt="390 像素手机视口下的对局" width="260" />
 
 ## 许可
 

@@ -44,3 +44,19 @@
 }
 
 #roomInput,#copyFallback{font-family:var(--font-code);font-variant-numeric:lining-nums tabular-nums;line-height:1.25}#roomInput::placeholder{font-family:"PingFang SC","Microsoft YaHei",sans-serif}#turnHint,#undoCountdown,#undo{font-variant-numeric:lining-nums tabular-nums}
+
+.round-actions,.move-controls>div{display:grid;grid-template-columns:max-content max-content;gap:4px}
+.round-actions{align-self:flex-end;flex-shrink:0}
+.round-actions button,.move-controls button{font-size:16px;padding-inline:12px;white-space:nowrap}
+button.resign{color:#925b54;background:#fbf2ee;border-color:#e1cfc8}
+button.resign:hover:not(:disabled){background:#f5e7e1;border-color:#cda69c}
+@media(min-width:900px){.round-actions{align-self:center}.round-actions #undo{grid-column:1;grid-row:1}.round-actions #resign{grid-column:2;grid-row:1}.move-controls #confirm{grid-column:1;grid-row:1}.move-controls #cancel{grid-column:2;grid-row:1}}
+
+@media(max-width:899px){.interaction-controls{max-width:600px}}
+
+@media(min-width:900px){.room-aside{padding-top:16px}}
+
+#resign{background:transparent;border-color:transparent;color:#bd9691}
+#resign:hover:not(:disabled){background:transparent;border-color:transparent;color:#a97770}
+
+@media(min-width:900px){.desktop-actions .interaction-controls{margin-right:-32px;gap:4px}.desktop-actions .reactions{flex:0 0 calc(round(down,calc(100% - 49px),47px) - 3px);scroll-snap-type:x mandatory}.desktop-actions .reactions button{scroll-snap-align:start}}

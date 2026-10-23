@@ -186,7 +186,7 @@ test('invitation follows presence while links and room codes preserve assigned i
         }
       } else {
         const aside = await a.locator('#roomAside').boundingBox();
-        if (!showInvite) expect(Math.abs(rules!.y - aside!.y - 10)).toBeLessThan(2);
+        if (!showInvite) expect(Math.abs(rules!.y - aside!.y - 16)).toBeLessThan(2);
         if (image) {
           expect(Math.abs(image.y + image.height / 2 - art!.y - art!.height / 2)).toBeLessThan(2);
           expect(image.y).toBeGreaterThanOrEqual(rules!.y + rules!.height);
@@ -599,7 +599,7 @@ test('mouse previews and moves only once after confirmation and server acknowled
       expect(confirm!.y - actions!.y - actions!.height).toBeGreaterThanOrEqual(23);
       expect(Math.abs(fixed!.y - actions!.y - actions!.height - 24)).toBeLessThan(2);
       await expect(p.locator('#invitePanel')).toBeHidden();
-      expect(Math.abs(rules!.y - aside!.y - 10)).toBeLessThan(2);
+      expect(Math.abs(rules!.y - aside!.y - 16)).toBeLessThan(2);
       expect(cancel!.x).toBeGreaterThan(confirm!.x + confirm!.width);
       expect(hint!.x - cancel!.x - cancel!.width).toBeGreaterThanOrEqual(23);
       expect(Math.abs(hint!.x + hint!.width - aside!.x - aside!.width)).toBeLessThan(2);
@@ -720,4 +720,165 @@ test('invited visitors see only the remaining dog role and a prominent join acti
     await a.locator('#approve').click();
     await expect(b.locator('#selfPlayer')).toContainText('狗狗');
   } finally {await finish(contexts);}
+});
+
+
+test('resignation confirms once, restores both results and swaps colors on rematch', async ({ browser }) => {
+  test.skip(!process.env.GOMOKU_LOCAL_SQL && !process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL);
+  const game = await pair(browser);
+  const {a,b,contexts} = game;
+  try {
+    const before = game.state();
+    const loser = before.turnSeat === 1 ? a : b, winner = loser === a ? b : a;
+    await loser.locator('#board button[data-x="7"][data-y="7"]').click();
+    await expect(loser.locator('#confirm')).toBeEnabled();
+    await loser.locator('#resign').click();
+    await expect(loser.locator('#resignDialog')).toBeVisible();
+    await expect(loser.locator('#dismissResign')).toBeFocused();
+    await loser.locator('#dismissResign').click();
+    await expect(loser.locator('#confirm')).toBeEnabled();
+    await loser.locator('#resign').click(); await loser.keyboard.press('Escape');
+    await expect(loser.locator('#confirm')).toBeEnabled();
+    await loser.locator('#resign').click();
+    const [response] = await Promise.all([
+      loser.waitForResponse(r => r.url().endsWith('/rpc/gomoku_command') && r.request().postDataJSON()?.p_action === 'resign'),
+      loser.locator('#confirmResign').click(),
+    ]);
+    const result = await response.json() as Snapshot;
+    expect(result).toMatchObject({phase:'finished',reason:'resign',winner:3-result.seat,turnDeadline:null,undoRequest:null,moves:[]});
+    const loserName = result.players[result.seat-1].name, winnerName = result.players[2-result.seat].name;
+    for (const page of [loser,winner]) {
+      await expect(page.locator('#resultTitle')).toHaveText(`${winnerName}赢啦！！`);
+      await expect(page.locator('#resultReason')).toHaveText(`${loserName}已认输✋️😭✋️`);
+      await expect(page.locator('#resign')).toBeDisabled();
+      await expect(page.locator('#confirm')).toBeDisabled();
+      await expect(page.locator('.stone.preview')).toHaveCount(0);
+      await expect(page.locator('#gameStatus')).toHaveText(page === loser ? '已认输，下局再来一决高下！💪' : '对方决定投降，这局是你的啦～🎉');
+      await page.reload();
+      await expect(page.locator('#resultReason')).toHaveText(`${loserName}已认输✋️😭✋️`);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({path:`test-results/screenshots/surrender-result-${page === a ? 'desktop' : 'mobile'}.png`,fullPage:true});
+    }
+    const clock = await winner.locator('#clock').textContent();
+    await expect.poll(() => winner.locator('#notice').textContent()).toBe('对方决定投降，这局是你的啦～🎉');
+    await expect(winner.locator('#clock')).toHaveText(clock!);
+    await loser.locator('#rematch').click(); await expect(winner.locator('#acceptRematch')).toBeVisible();
+    await winner.locator('#acceptRematch').click();
+    for (const page of [a,b]) {
+      await expect(page.locator('#round')).toHaveText('02');
+      await expect(page.locator('#resign')).toBeEnabled();
+      await expect(page.locator('#resultPanel')).toBeHidden();
+    }
+    await expect.poll(() => game.state().blackSeat).toBe(3-before.blackSeat);
+    expect(game.errors).toEqual([]);
+  } finally { await finish(contexts); }
+});
+
+test('resignation controls align on phones and desktops and dialogs fit narrow screens', async ({ browser }) => {
+  test.skip(!process.env.GOMOKU_LOCAL_SQL && !process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL);
+  const game = await pair(browser);
+  try {
+    for (const width of [320,360,390,430,760,900,1024,1280]) {
+      const page = game.a; await page.setViewportSize({width,height:1000});
+      const resign = (await page.locator('#resign').boundingBox())!, undo = (await page.locator('#undo').boundingBox())!;
+      const cancel = (await page.locator('#cancel').boundingBox())!, confirm = (await page.locator('#confirm').boundingBox())!;
+      expect(Math.abs(resign.y-undo.y)).toBeLessThan(1);
+      expect(resign.width).toBeLessThan(undo.width);
+      expect(resign.height).toBeGreaterThanOrEqual(44);
+      await expect(page.locator('#resign')).toHaveCSS('background-color','rgba(0, 0, 0, 0)');
+      await expect(page.locator('#resign')).toHaveCSS('border-top-color','rgba(0, 0, 0, 0)');
+      expect(Math.abs(resign.x-cancel.x)).toBeLessThan(1);
+      expect(Math.abs(undo.x-confirm.x)).toBeLessThan(1);
+      expect(width >= 900 ? resign.x > undo.x : resign.x < undo.x).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      if (width >= 900) {
+        const geometry = await page.evaluate(() => {
+          const textBox = (node: Element) => { const range=document.createRange(); range.selectNodeContents(node); return range.getBoundingClientRect().toJSON(); };
+          return {code:textBox(document.querySelector('#roomCode')!),rules:textBox(document.querySelector('#rules summary')!)};
+        });
+        expect(Math.abs(geometry.code.top-geometry.rules.top)).toBeLessThan(1);
+        const strip = page.locator('#reactions');
+        await strip.evaluate(node => { node.scrollLeft=0; });
+        const visibleReactions = await strip.evaluate(node => {
+          const bounds=node.getBoundingClientRect();
+          return Array.from(node.children).map(child => child.getBoundingClientRect()).filter(r => r.right > bounds.left && r.left < bounds.right)
+            .map(r => r.left >= bounds.left - 1 && r.right <= bounds.right + 1);
+        });
+        expect(visibleReactions.length).toBeGreaterThan(0);
+        expect(visibleReactions.every(Boolean)).toBe(true);
+        if (width === 1280) expect(visibleReactions).toHaveLength(5);
+        const next = (await page.locator('#nextReactions').boundingBox())!;
+        expect(next.x + next.width).toBeLessThan(width);
+      }
+      await page.locator('#resign').click();
+      const dialog = (await page.locator('#resignDialog').boundingBox())!;
+      expect(dialog.x).toBeGreaterThanOrEqual(0); expect(dialog.x+dialog.width).toBeLessThanOrEqual(width);
+      await page.screenshot({path:`test-results/screenshots/surrender-dialog-${width}.png`,fullPage:true});
+      await page.locator('#dismissResign').click();
+      if ([390,1280].includes(width)) await page.screenshot({path:`test-results/screenshots/surrender-game-${width}.png`,fullPage:true});
+    }
+    expect(game.errors).toEqual([]);
+  } finally { await finish(game.contexts); }
+});
+
+test('resignation during undo clears the proposal and reconciles a lost response', async ({ browser }) => {
+  test.skip(!process.env.GOMOKU_LOCAL_SQL && !process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL);
+  const game = await pair(browser);
+  try {
+    const mover = game.state().turnSeat === 1 ? game.a : game.b, other = mover === game.a ? game.b : game.a;
+    await play(mover,7,7); await expect(mover.locator('#undo')).toBeEnabled();
+    await mover.locator('#undo').click(); await mover.locator('#requestUndo').click();
+    await expect(other.locator('#undoPanel')).toBeVisible();
+    await expect(other.locator('#resign')).toBeEnabled();
+    let acceptedRequests = 0;
+    await other.route('**/rpc/gomoku_command', async route => {
+      if (route.request().postDataJSON()?.p_action !== 'resign') return route.continue();
+      const response = await route.fetch(); expect((await response.json() as Snapshot).reason).toBe('resign');
+      acceptedRequests++;
+      await route.abort('failed');
+    });
+    await other.locator('#resign').click(); await other.locator('#confirmResign').click();
+    await expect.poll(() => acceptedRequests).toBe(1);
+    await expect(other.locator('#resultReason')).toContainText('已认输');
+    await expect(mover.locator('#resultReason')).toContainText('已认输');
+    await other.unroute('**/rpc/gomoku_command');
+    if (await other.locator('#retry').isVisible()) await other.locator('#retry').click();
+    await expect(other.locator('#resultReason')).toContainText('已认输');
+    await expect(other.locator('#retry')).toBeHidden();
+    for (const page of [mover,other]) await expect(page.locator('#undoPanel')).toBeHidden();
+    expect(game.errors).toEqual([]);
+  } finally { await finish(game.contexts); }
+});
+
+
+test('simultaneous resignations converge on one authoritative result', async ({ browser }) => {
+  test.skip(!process.env.GOMOKU_LOCAL_SQL && !process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL);
+  const game = await pair(browser);
+  let release: () => void = () => {};
+  const barrier = new Promise<void>(resolve => {release=resolve;});
+  let arrivals = 0;
+  try {
+    for (const page of [game.a,game.b]) {
+      await page.route('**/rpc/gomoku_command', async route => {
+        if (route.request().postDataJSON()?.p_action === 'resign') {
+          if (++arrivals === 2) release();
+          await barrier;
+        }
+        await route.continue();
+      });
+      await page.locator('#resign').click();
+    }
+    const replies = [game.a,game.b].map(page => page.waitForResponse(r => r.url().endsWith('/rpc/gomoku_command') && r.request().postDataJSON()?.p_action === 'resign'));
+    await Promise.all([game.a,game.b].map(page => page.locator('#confirmResign').click()));
+    const results = await Promise.all((await Promise.all(replies)).map(async response => await response.json() as Snapshot));
+    expect(results.filter(result => result.accepted)).toHaveLength(1);
+    expect(new Set(results.map(result => result.version)).size).toBe(1);
+    expect(new Set(results.map(result => result.winner)).size).toBe(1);
+    for (const page of [game.a,game.b]) {
+      await expect(page.locator('#resultReason')).toContainText('已认输');
+      await expect(page.locator('#resignDialog')).not.toBeVisible();
+    }
+    expect(results.every(result => result.phase === 'finished' && result.reason === 'resign')).toBe(true);
+    expect(game.errors).toEqual([]);
+  } finally {release(); await finish(game.contexts);}
 });

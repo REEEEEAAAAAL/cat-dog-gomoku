@@ -2,7 +2,7 @@ import type { Move, Point, Seat } from './rules';
 
 export type Phase = 'waiting' | 'running' | 'paused' | 'finished' | 'closed';
 export type Action = 'create' | 'apply' | 'connect' | 'snapshot' | 'sync' | 'approve' | 'reject' | 'ready' | 'move' | 'rematch' | 'leave'
-  | 'undo_request' | 'undo_respond' | 'undo_cancel' | 'emoji' | 'withdraw' | 'preview';
+  | 'resign' | 'undo_request' | 'undo_respond' | 'undo_cancel' | 'emoji' | 'withdraw' | 'preview';
 export interface InvitationInfo { preview: true; room: string; code: string; animal: 'cat' | 'dog' }
 export function isInvitationInfo(value: unknown): value is InvitationInfo {
   return typeof value === 'object' && value !== null && 'preview' in value && value.preview === true
@@ -29,7 +29,7 @@ export interface Snapshot {
   moves: Move[];
   winLine: Point[];
   winner: Seat | null;
-  reason: 'five' | 'draw' | 'timeout' | 'disconnect_timeout' | 'left' | null;
+  reason: 'resign' | 'five' | 'draw' | 'timeout' | 'disconnect_timeout' | 'left' | null;
   players: [Player, Player];
   application: { id: string; name: string } | null;
   remainingMs: number;
@@ -75,7 +75,7 @@ export function isReply(value: unknown): value is Reply {
     && seat(value.blackSeat) && seat(value.turnSeat) && Array.isArray(value.moves) && value.moves.length <= 225
     && value.moves.every(m => point(m) && object(m) && seat(m.seat) && seat(m.color))
     && Array.isArray(value.winLine) && value.winLine.every(point) && (value.winner === null || seat(value.winner))
-    && [null, 'five', 'draw', 'timeout', 'disconnect_timeout', 'left'].includes(value.reason as string | null)
+    && [null, 'resign', 'five', 'draw', 'timeout', 'disconnect_timeout', 'left'].includes(value.reason as string | null)
     && Array.isArray(value.players) && value.players.length === 2 && value.players.every(player)
     && (value.application === null || (object(value.application) && typeof value.application.id === 'string' && typeof value.application.name === 'string'))
     && number(value.remainingMs) && nullableNumber(value.turnDeadline) && nullableNumber(value.offlineDeadline)

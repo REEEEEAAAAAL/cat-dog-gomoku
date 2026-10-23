@@ -50,7 +50,7 @@ describe('confirmed snapshot sound events', () => {
     expect(events.observe(state({ version: 2, moves: [], players }), true)).toEqual(['undo']);
     expect(events.observe(state({ version: 3, moves: [move('b')], players }), true)).toEqual(['move']);
   });
-  it.each(['five', 'timeout'] as const)('plays opposite results for %s and sequences a final move first', reason => {
+  it.each(['five', 'timeout', 'resign'] as const)('plays opposite results for %s and sequences a final move first', reason => {
     for (const seat of [1, 2] as const) {
       const events = new SoundEvents(); events.observe(state({ seat }), true);
       const next = state({ seat, phase: 'finished', winner: 1, reason, version: 2, moves: reason === 'five' ? [move('last')] : [] });

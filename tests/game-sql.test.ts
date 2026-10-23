@@ -1,6 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import { readFile } from 'node:fs/promises';
 import { beforeAll, afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { isReply } from '../src/game/protocol';
 import type { Action, Reply, Snapshot } from '../src/game/protocol';
 import type { Move, Seat } from '../src/game/rules';
 
@@ -52,8 +53,10 @@ beforeAll(async () => {
   await db.exec(lifecycle.replaceAll('clock_timestamp()', 'public.test_now()'));
   const feedback = await readFile('cloudbase/migrations/20261023040000_interaction_feedback.sql', 'utf8');
   await db.exec(feedback.replaceAll('clock_timestamp()', 'public.test_now()'));
+  const resign = await readFile('cloudbase/migrations/20261023060000_resign.sql', 'utf8');
   const preview = await readFile('cloudbase/migrations/20261023050000_invitation_preview.sql', 'utf8');
   await db.exec(preview.replaceAll('clock_timestamp()', 'public.test_now()'));
+  await db.exec(resign.replaceAll('clock_timestamp()', 'public.test_now()'));
 });
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
@@ -365,5 +368,86 @@ describe('game RPC on isolated PostgreSQL with controlled server clock', () => {
     await alive(20000); await call('emoji', { emoji: 'cat' }); expect(current.rejection).toBe('emoji_rate_limit');
     await alive(60000); await call('emoji', { emoji: 'cat' });
     expect(current.reason).toBe('timeout');
+  });
+});
+
+
+describe('resignation settlement', () => {
+  it.each([true, false])('allows resignation with own turn=%s and persists the opposite winner', async ownTurn => {
+    await start();
+    const resigning = (ownTurn ? current.turnSeat : 3-current.turnSeat) as Seat;
+    await as(resigning); await call('snapshot');
+    const before = current;
+    await time(5000); await call('resign');
+    expect(current).toMatchObject({ phase:'finished', reason:'resign', winner:3-resigning, version:before.version+1,
+      moves:[], winLine:[], turnDeadline:null, offlineDeadline:null, undoRequest:null, remainingMs:55000 });
+    expect(current.players.every(p => !p.ready)).toBe(true);
+    expect(isReply(current)).toBe(true);
+    expect(isReply({...current,reason:'invalid'})).toBe(false);
+    const version = current.version;
+    await as((3-resigning) as Seat); await call('connect'); await sync();
+    expect(current).toMatchObject({ phase:'finished', reason:'resign', winner:3-resigning, version });
+    await time(120000); await call('snapshot');
+    expect(current).toMatchObject({ phase:'finished', reason:'resign', winner:3-resigning, version, turnDeadline:null });
+  });
+  it('rejects waiting and closed rooms without a winner', async () => {
+    await call('resign'); expect(current).toMatchObject({ accepted:false, rejection:'wrong_phase', phase:'waiting', winner:null });
+    await call('leave'); await call('resign');
+    expect(current).toMatchObject({ accepted:false, rejection:'room_closed', phase:'closed', winner:null });
+  });
+  it('cancels pending undo and rejects a late agreement after resignation', async () => {
+    await start(); await as(current.turnSeat); await call('move', {x:7,y:7});
+    const mover = (3-current.turnSeat) as Seat;
+    await as(mover); await call('undo_request', {target:current.moves[0].id});
+    const request = current.undoRequest!.id, before = current;
+    await as((3-mover) as Seat); await call('resign');
+    expect(current).toMatchObject({ phase:'finished', winner:mover, reason:'resign', undoRequest:null, moves:before.moves });
+    await call('undo_respond', {request,accept:true}, {version:before.version});
+    expect(current.accepted).toBe(false);
+    await as(mover); await call('move', {x:8,y:7});
+    expect(current).toMatchObject({ accepted:false, phase:'finished', reason:'resign', moves:before.moves });
+  });
+  it('accepts a turn-independent intent after a concurrent move or undo change', async () => {
+    await start(); const before = current;
+    await as(current.turnSeat); await call('move',{x:7,y:7});
+    await as(current.turnSeat); await call('resign',{}, {version:before.version,game:before.gameId});
+    expect(current).toMatchObject({ accepted:true, reason:'resign', phase:'finished' });
+    expect(current.moves).toHaveLength(1);
+  });
+  it('settles simultaneous resignations once and deduplicates a lost acknowledgement', async () => {
+    await start(); const before = current, operation = crypto.randomUUID();
+    await as(1); await call('resign',{}, {operation,version:before.version});
+    const version = current.version;
+    await as(2); await call('resign',{}, {version:before.version});
+    expect(current).toMatchObject({ accepted:false, winner:2, reason:'resign', version });
+    await as(1); await call('resign',{}, {operation,version:before.version});
+    expect(current).toMatchObject({ accepted:true, duplicate:true, winner:2, reason:'resign', version });
+    await call('resign');
+    expect(current).toMatchObject({ accepted:false, rejection:'wrong_phase', winner:2, version });
+  });
+  it('preserves an earlier timeout and five-in-a-row result', async () => {
+    await start();
+    for (const ms of [10000,20000,30000,40000,50000,60000]) {
+      await time(ms); await as(1); await call('snapshot'); await as(2); await call('snapshot');
+    }
+    await time(60001); await call('resign');
+    expect(current).toMatchObject({ accepted:false, phase:'finished', reason:'timeout' });
+    await time(0);
+    await db.query("UPDATE public.gomoku_rooms SET phase='finished',reason='five',winner=1 WHERE id=$1",[room]);
+    await call('resign');
+    expect(current).toMatchObject({ accepted:false, phase:'finished', reason:'five', winner:1 });
+  });
+  it('allows the connected player to resign while the other player is offline', async () => {
+    await start(); await time(10000); await call('snapshot'); await time(16000); await call('resign');
+    expect(current).toMatchObject({ accepted:true, phase:'finished', reason:'resign', winner:3-caller, offlineDeadline:null });
+  });
+  it('swaps colors on rematch and fences delayed resignation from the old round', async () => {
+    await start(); const before = current;
+    await as(1); await call('resign'); await call('rematch');
+    await as(2); await call('snapshot'); await call('rematch');
+    expect(current).toMatchObject({ phase:'running', round:2, blackSeat:3-before.blackSeat, winner:null, reason:null, undoRequest:null });
+    expect(current.gameId).not.toBe(before.gameId);
+    await call('resign',{}, {game:before.gameId,version:before.version});
+    expect(current).toMatchObject({ accepted:false, rejection:'old_game', phase:'running', winner:null });
   });
 });

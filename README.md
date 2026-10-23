@@ -14,6 +14,7 @@ The hosted game uses a CloudBase trial environment with limited validity and quo
 - Five or more stones in a row wins. Preview a position, then confirm the move to avoid accidental placement; mouse, touch, and keyboard are supported.
 - Server-managed 60-second turns, disconnect pauses, and recovery after refresh. A five-minute unresolved disconnect ends the round without a winner.
 - Negotiated undo, up to two successful uses per player per round; both players review the affected stones before approval.
+- Resignation at any time after a round starts, with confirmation and a server-persisted result; no opponent approval is needed.
 - Rematches with swapped colors, eight fixed reactions, and local sound effects with a persistent mute setting.
 
 There is no matchmaking, spectator mode, free-text chat, or computer opponent. An invitation grants permission to apply, not ownership of a player's seat. Returning players use the same browser session; another browser cannot take over their identity. Leaving closes the room for both players, and rooms expire after 24 hours.
@@ -111,9 +112,9 @@ The root `index.html`, `public/`, `vite.config.ts`, `wrangler.jsonc`, and genera
 
 Current UI captured in a local two-browser game using the real SQL migrations. The phone image uses a simulated viewport.
 
-<img src="docs/screenshots/desktop.png" alt="Desktop game" width="700" />
+<img src="docs/screenshots/desktop-surrender.png" alt="Desktop game" width="700" />
 
-<img src="docs/screenshots/mobile.png" alt="Game at a 390-pixel phone viewport" width="260" />
+<img src="docs/screenshots/mobile-surrender.png" alt="Game at a 390-pixel phone viewport" width="260" />
 
 ## License
 
