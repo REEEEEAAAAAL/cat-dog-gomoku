@@ -33,6 +33,19 @@ const seenReactions = new Set<string>();
 const bubbles = new Map<number, { reaction: Reaction; until: number }>();
 let undoTarget = '';
 let undoProposal: Pick<Snapshot, 'version' | 'gameId'> | null = null;
+let resultKey = '';
+let dismissedResult = '';
+let feedbackTimer = 0;
+let lastActivityAt = performance.now();
+let idlePaused = false;
+
+function feedback(message: string, error = false) {
+  window.clearTimeout(feedbackTimer);
+  el('feedbackText').textContent = message;
+  el('feedback').hidden = false;
+  el('feedback').classList.toggle('error', error);
+  feedbackTimer = window.setTimeout(() => { el('feedback').hidden = true; }, 9000);
+}
 
 function forgetRoom(target = room) {
   if (storedRoom === target) { storedRoom = ''; localStorage.removeItem('gomoku.room'); }
@@ -41,6 +54,8 @@ function forgetRoom(target = room) {
 function home() {
   epoch++; room = ''; pending = false; snapshot = null; connected = false; superseded = false;
   selection = null; uncertain = null; applicationId = null; bubbles.clear(); seenReactions.clear();
+  resultKey = ''; dismissedResult = ''; el('feedback').hidden = true;
+  idlePaused = false;
   document.querySelectorAll<HTMLDialogElement>('dialog').forEach(dialog => dialog.close());
   history.replaceState(null, '', location.pathname); el('copyFallback').hidden = true;
   el('entryTitle').textContent = '今天，你是谁？'; render();
@@ -110,6 +125,10 @@ function playerElements(s: Snapshot) {
     const node = document.createElement('div');
     node.className = `player ${s.phase === 'running' && s.turnSeat === seat ? 'active' : ''}`;
     node.innerHTML = `${avatar(p.animal)}<div class="player-info"><span class="player-name"></span><span class="player-detail"><i class="color-dot ${s.blackSeat === seat ? '' : 'white'}"></i><span></span></span></div>`;
+    if (s.phase === 'running' && s.turnSeat === seat) {
+      node.style.setProperty('--turn-phase', `${-(performance.now() / 1000 % 5)}s`);
+      node.insertAdjacentHTML('beforeend', '<svg class="turn-orbit" aria-hidden="true"><rect x="1" y="1" rx="14" pathLength="100"/></svg>');
+    }
     node.querySelector('.player-name')!.textContent = p.name ? `${p.name}${seat === s.seat ? '（你）' : '（对方）'}` : '等待对方入座';
     node.querySelector('.player-detail span')!.textContent = `${s.blackSeat === seat ? '黑棋' : '白棋'} · ${!p.name ? '未加入' : !p.online ? '离线' : !p.synced ? '同步中' : p.ready ? '已准备' : '在线'} · 悔棋：剩余${p.undoLeft}次`;
     const bubble = bubbles.get(seat);
@@ -169,7 +188,7 @@ function render() {
   let title: string;
   let text: string;
   if (s.phase === 'running') {
-    title = `${turnName}的回合`; text = s.turnSeat === s.seat ? '轮到你了，选一个空交叉点' : '等对方想一想，下一步就到你';
+    title = s.turnSeat === s.seat ? '你的回合！' : `${turnName}的回合`; text = s.turnSeat === s.seat ? '轮到你了，选一个空交叉点' : '等对方想一想，下一步就到你';
   } else if (s.phase === 'paused') {
     title = s.undoRequest ? '悔棋请求待处理' : '等你们重新连上';
     text = s.undoRequest ? '等对方回应，双方暂时不能落子。' : '棋盘已保存。双方恢复连接并同步后，继续剩余时间。';
@@ -178,7 +197,7 @@ function render() {
   } else if (s.phase === 'closed') {
     title = '房间已关闭'; text = '本房间不能继续，可以返回首页再建一间。';
   } else {
-    title = s.reason === 'draw' ? '这一局，平分秋色' : s.reason === 'disconnect_timeout' ? '本局已中止，不计输赢' : `${winner}获胜`;
+    title = s.reason === 'draw' ? '这一局，平分秋色' : s.reason === 'disconnect_timeout' ? '本局已中止，不计输赢' : `${winner}获胜！🎉`;
     text = s.reason === 'timeout' ? `${turnName}超时，${winner}获胜。` : s.reason === 'five' ? '五子连线！要不要交换黑白再来一局？'
       : s.reason === 'disconnect_timeout' ? '断线等待超过 5 分钟。双方回来后，可以再来一局。' : '棋盘已满，双方都没有五子连线。';
   }
@@ -193,6 +212,17 @@ function render() {
   button('rematch').hidden = s.phase !== 'finished';
   button('rematch').textContent = own.ready ? '已同意，等对方' : '再来一局 · 交换黑白';
   button('rematch').disabled = busy || !connected || !own.synced || own.ready || !!uncertain;
+  const rematchInvite = s.phase === 'finished' && s.players[2 - s.seat].ready && !own.ready;
+  el('rematchPanel').hidden = !rematchInvite;
+  button('acceptRematch').disabled = button('rematch').disabled;
+  const nextResultKey = s.phase === 'finished' && s.winner ? `${s.gameId}:${s.reason}:${s.winner}` : '';
+  if (nextResultKey !== resultKey) {
+    resultKey = nextResultKey;
+    el('resultAvatar').innerHTML = s.winner ? avatar(s.players[s.winner - 1].animal) : '';
+    el('resultTitle').textContent = `${winner}赢啦！`;
+    el('resultReason').textContent = s.reason === 'timeout' ? `${turnName}行棋超时` : '五子连线，这一局好精彩';
+  }
+  el('resultPanel').hidden = !resultKey || dismissedResult === resultKey;
   if (s.application) el('applicantName').textContent = `${s.application.name} 想加入你的房间。请确认是对方本人。`;
   for (const id of ['approve', 'reject', 'leave']) button(id).disabled = busy || !connected || !!uncertain;
   button('confirm').disabled = !selection || !canMove();
@@ -212,7 +242,12 @@ function render() {
   for (const node of el('reactions').querySelectorAll<HTMLButtonElement>('button')) {
     node.disabled = busy || !connected || !!uncertain || s.phase === 'closed' || !s.players.every(p => p.online && p.synced);
   }
-  el('selectionHint').textContent = selection ? `已选 ${String.fromCharCode(65 + selection.x)}${selection.y + 1}，确认后才落子` : '手机点选交叉点，再确认落子';
+  el('selectionHint').textContent = selection ? `已选 ${String.fromCharCode(65 + selection.x)}${selection.y + 1}，确认后才落子` : '点选交叉点，再确认落子';
+  el('moveControls').classList.toggle('has-selection', !!selection);
+  if (selection) {
+    el('moveControls').style.setProperty('--point-x', `${(selection.x + .5) / 15 * 100}%`);
+    el('moveControls').style.setProperty('--point-y', `${(selection.y + .5) / 15 * 100}%`);
+  }
   renderBoard(); renderClock();
 }
 
@@ -234,6 +269,13 @@ function apply(reply: Reply) {
     seenReactions.add(event.id);
   }
   if (seenReactions.size > 100) { seenReactions.clear(); reply.emojis.forEach(e => seenReactions.add(e.id)); }
+  if (reply.undoDenied) {
+    const key = `gomoku.denial.${reply.room}.${reply.gameId}`;
+    if (sessionStorage.getItem(key) !== reply.undoDenied.id) {
+      sessionStorage.setItem(key, reply.undoDenied.id);
+      feedback('对方残忍拒绝了你的悔棋申请😭', true);
+    }
+  }
   snapshot = reply; pending = false; room = reply.room;
   serverAtReceipt = reply.serverNow; lastReceiptAt = performance.now();
   if (reply.phase === 'closed') forgetRoom(reply.room);
@@ -263,8 +305,12 @@ async function synchronize() {
 
 async function run(work: () => Promise<void>) {
   if (busy) return;
+  lastActivityAt = performance.now();
   busy = true; render();
-  try { await work(); }
+  try {
+    if (idlePaused && room) { idlePaused = false; await refreshRoom(); }
+    await work();
+  }
   catch (error) { failure(error); }
   finally { busy = false; render(); }
 }
@@ -296,7 +342,9 @@ async function mutate(action: Action, data: Record<string, unknown> = {}, retry 
   if (!reply.accepted && reply.rejection === 'state_conflict' && rebase && !retry && sameIntent && reply.gameId === request.p_game) {
     await synchronize(); await mutate(action, data, false, false); return;
   }
-  notice(reply.accepted ? action === 'move' ? '落子已保存，等对方下一步。' : '已同步，棋盘与对方保持一致。' : errorMessage(reply.rejection || ''));
+  const message = reply.accepted ? action === 'move' ? '落子已保存，等对方下一步。' : '已同步，棋盘与对方保持一致。' : errorMessage(reply.rejection || '');
+  notice(message);
+  if (!reply.accepted) feedback(message, true);
   await synchronize();
 }
 
@@ -329,6 +377,14 @@ function connectionStatus() {
 
 async function poll() {
   if (!room || busy || polling || document.hidden || superseded || snapshot?.phase === 'closed') return;
+  if (snapshot?.phase !== 'running' && snapshot?.phase !== 'paused' && performance.now() - lastActivityAt >= 120000) {
+    if (!idlePaused) {
+      idlePaused = true; connected = false; render();
+      notice('暂歇自动同步，轻触页面或点击重新连接即可继续。');
+    }
+    return;
+  }
+  idlePaused = false;
   const active = epoch;
   polling = true;
   try {
@@ -340,10 +396,9 @@ async function poll() {
   } finally { polling = false; render(); }
 }
 
-function select(point: Point, direct = false) {
+function select(point: Point) {
   if (!canMove() || snapshot?.moves.some(m => m.x === point.x && m.y === point.y)) return;
   selection = point; render();
-  if (direct) void run(() => mutate('move', { x: point.x, y: point.y }));
 }
 
 const board = el('board');
@@ -358,7 +413,7 @@ for (let y = 0; y < 15; y++) {
     });
     cell.addEventListener('pointercancel', () => { pointer = null; });
     cell.addEventListener('pointerup', event => {
-      if (pointer && !pointer.moved && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) < 10) select({ x, y }, event.pointerType === 'mouse');
+      if (pointer && !pointer.moved && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) < 10) select({ x, y });
       pointer = null;
     });
     cell.addEventListener('click', event => { if (event.detail === 0) select({ x, y }); });
@@ -396,6 +451,9 @@ button('reconnect').onclick = () => { void run(async () => {
 button('retry').onclick = () => { void run(async () => { if (!connected) { await login(); await exchange(command('connect')); await synchronize(); } await mutate('move', {}, true); }); };
 button('ready').onclick = () => { void run(() => mutate('ready')); };
 button('rematch').onclick = () => { void run(() => mutate('rematch')); };
+button('acceptRematch').onclick = () => { void run(() => mutate('rematch')); };
+button('dismissResult').onclick = () => { dismissedResult = resultKey; el('resultPanel').hidden = true; };
+button('dismissFeedback').onclick = () => { el('feedback').hidden = true; };
 button('approve').onclick = () => { void run(() => mutate('approve', { application: snapshot?.application?.id })); };
 button('reject').onclick = () => { void run(() => mutate('reject', { application: snapshot?.application?.id })); };
 button('confirm').onclick = () => { if (selection && canMove()) { const point = selection; void run(() => mutate('move', { x: point.x, y: point.y })); } };
@@ -404,6 +462,7 @@ const undoDialog = el('undoDialog') as HTMLDialogElement;
 button('undo').onclick = () => { void run(async () => {
   await exchange(command('snapshot')); await synchronize();
   if (!snapshot || snapshot.phase !== 'running') return;
+  if (snapshot.undoBlocked) { feedback('你本轮申请过但是失败了，下次再试试吧~', true); return; }
   const index = snapshot.moves.findLastIndex(m => m.seat === snapshot!.seat);
   if (index < 0) return;
   const move = snapshot.moves[index]; undoTarget = move.id ?? `legacy-${index}`;
@@ -432,13 +491,34 @@ button('cancelApplication').onclick = () => { void run(async () => {
   }
 }); };
 button('homeReturn').onclick = () => { home(); notice('房间已关闭，可以重新创建或加入。'); };
-button('invite').onclick = () => {
-  const link = `${location.origin}${location.pathname}#${room}`;
-  void navigator.clipboard?.writeText(link).then(() => notice('邀请链接已复制，发给对方就好。')).catch(() => {
-    const box = el('copyFallback') as HTMLTextAreaElement; box.hidden = false; box.value = link; box.focus(); box.select(); notice('请长按链接手动复制');
-  });
-  if (!navigator.clipboard) { const box = el('copyFallback') as HTMLTextAreaElement; box.hidden = false; box.value = link; box.focus(); box.select(); notice('请长按链接手动复制'); }
-};
+const copyTimers = new Map<string, number>();
+async function copy(id: string, value: string, label: string, success: string) {
+  const target = button(id), active = epoch;
+  window.clearTimeout(copyTimers.get(id));
+  target.disabled = true;
+  target.textContent = label;
+  target.classList.remove('copied');
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(value);
+    if (active !== epoch) return;
+    el('copyFallback').hidden = true;
+    target.textContent = success; target.classList.add('copied');
+    el('copyStatus').textContent = success;
+  } catch {
+    if (active !== epoch) return;
+    const box = el('copyFallback') as HTMLTextAreaElement;
+    box.hidden = false; box.value = value; box.setAttribute('aria-label', `${label}失败，请手动复制`);
+    box.focus(); box.select();
+    el('copyStatus').textContent = '复制失败，请长按或选中下方内容手动复制。';
+    feedback('复制失败，请手动复制下方内容。', true);
+  } finally {
+    target.disabled = false;
+    copyTimers.set(id, window.setTimeout(() => { target.textContent = label; target.classList.remove('copied'); }, 5000));
+  }
+}
+button('invite').onclick = () => { void copy('invite', `${location.origin}${location.pathname}#${snapshot?.code || room}`, '复制邀请链接', '复制成功！发送给对方让TA加入吧~'); };
+button('copyCode').onclick = () => { if (snapshot) void copy('copyCode', snapshot.code, '复制房间码', '房间码复制成功！'); };
 const leaveDialog = el('leaveDialog') as HTMLDialogElement;
 button('leave').onclick = () => leaveDialog.showModal();
 button('stay').onclick = () => leaveDialog.close();
@@ -453,9 +533,10 @@ window.addEventListener('offline', () => { connected = false; selection = null; 
 window.addEventListener('online', () => { void poll(); });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { connected = false; selection = null; render(); }
-  else void poll();
+  else { lastActivityAt = performance.now(); void poll(); }
 });
 window.addEventListener('pageshow', () => { if (room && !document.hidden) void poll(); });
+for (const event of ['pointerdown', 'keydown'] as const) document.addEventListener(event, () => { lastActivityAt = performance.now(); }, { passive: true });
 window.setInterval(() => { void poll(); }, 5000);
 window.setInterval(renderClock, 250);
 if (roomPattern.test(invitation)) {

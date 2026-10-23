@@ -50,6 +50,8 @@ beforeAll(async () => {
   await db.exec(extras.replaceAll('clock_timestamp()', 'public.test_now()'));
   const lifecycle = await readFile('cloudbase/migrations/20261023030000_application_lifecycle.sql', 'utf8');
   await db.exec(lifecycle.replaceAll('clock_timestamp()', 'public.test_now()'));
+  const feedback = await readFile('cloudbase/migrations/20261023040000_interaction_feedback.sql', 'utf8');
+  await db.exec(feedback.replaceAll('clock_timestamp()', 'public.test_now()'));
 });
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
@@ -176,23 +178,29 @@ describe('game RPC on isolated PostgreSQL with controlled server clock', () => {
   });
   it.each([59999, 60000, 60001])('uses server time at the deadline: %s', async ms => {
     await start();
-    for (const ms of [20000, 40000]) { await time(ms); await as(1); await call('snapshot'); await as(2); await call('snapshot'); }
+    for (const ms of [10000, 20000, 30000, 40000, 50000]) { await time(ms); await as(1); await call('snapshot'); await as(2); await call('snapshot'); }
     await time(ms); await as(current.turnSeat); const turn = current.turnSeat; await call('move', { x: 2, y: 3 });
     if (ms < 60000) expect(current.moves).toHaveLength(1);
     else expect(current).toMatchObject({ phase: 'finished', reason: 'timeout', winner: 3 - turn, moves: [] });
   });
   it('pauses after a missed heartbeat, rejects play, then requires the returning player to acknowledge synchronization', async () => {
     await start(); await time(26000); await as(2); await call('snapshot');
-    expect(current).toMatchObject({ phase: 'paused', remainingMs: 35000, offlineDeadline: baseTime + 325000 });
+    expect(current).toMatchObject({ phase: 'paused', remainingMs: 45000, offlineDeadline: baseTime + 315000 });
     await call('move', { x: 0, y: 0 }); expect(current.rejection).toBe('sync_required'); await sync();
     await time(100000); await call('snapshot'); await sync(); const deadline = current.offlineDeadline;
     await as(1); await call('connect'); expect(current.offlineDeadline).toBe(deadline);
-    await sync(); expect(current).toMatchObject({ phase: 'running', remainingMs: 35000, turnDeadline: baseTime + 135000 });
+    await sync(); expect(current).toMatchObject({ phase: 'running', remainingMs: 45000, turnDeadline: baseTime + 145000 });
   });
-  it.each([324999, 325000, 325001])('honors the fixed five-minute reconnect boundary: %s', async ms => {
+  it('tolerates two missed polls and pauses at exactly fifteen seconds', async () => {
+    await start(); await time(14999); await as(1); await call('snapshot');
+    expect(current.phase).toBe('running');
+    await time(15000); await call('snapshot');
+    expect(current).toMatchObject({ phase: 'paused', remainingMs: 45000, offlineDeadline: baseTime + 315000 });
+  });
+  it.each([314999, 315000, 315001])('honors the fixed five-minute reconnect boundary: %s', async ms => {
     await start(); await time(26000); await as(2); await call('snapshot');
     await time(ms); await call('connect'); await sync(); await as(1); await call('connect'); await sync();
-    if (ms < 325000) expect(current.phase).toBe('running');
+    if (ms < 315000) expect(current.phase).toBe('running');
     else expect(current).toMatchObject({ phase: 'finished', reason: 'disconnect_timeout', winner: null });
   });
   it('settles both-offline rooms lazily without reviving an old game', async () => {
@@ -205,7 +213,7 @@ describe('game RPC on isolated PostgreSQL with controlled server clock', () => {
     expect(current).toMatchObject({ phase: 'paused', remainingMs: 50000 });
     const deadline = current.offlineDeadline;
     await expect(call('snapshot', {}, { client: old })).rejects.toThrow('superseded');
-    await time(20000); await call('connect', {}, { client: replacement }); expect(current.offlineDeadline).toBe(deadline);
+    await time(20000); await as(2); await call('snapshot'); await sync(); await as(1); await call('connect', {}, { client: replacement }); expect(current.offlineDeadline).toBe(deadline);
     await call('sync', {}, { client: replacement }); expect(current).toMatchObject({ phase: 'running', remainingMs: 50000 });
   });
   it.each(['five', 'timeout', 'disconnect_timeout'])('requires two rematch votes and swaps colors after %s', async reason => {
@@ -265,6 +273,22 @@ describe('game RPC on isolated PostgreSQL with controlled server clock', () => {
     expect(current).toMatchObject({ phase: 'running', turnSeat: turn, remainingMs: remaining, undoRequest: null });
     expect(current.players[first - 1].undoLeft).toBe(2);
     await as(first); await call('snapshot'); await requestUndo(); expect(current.rejection).toBe('undo_already_requested');
+    expect(current.undoBlocked).toBe(true);
+    expect(current.undoDenied?.id ?? null).toBe(finish === 'reject' ? request.id : null);
+  });
+  it('persists refusal only for the requester and allows a later distinct target after cooldown', async () => {
+    const first = await moveFirst(); const request = await requestUndo();
+    await as((3 - first) as Seat); await call('snapshot'); await call('undo_respond', { request: request.id, accept: false });
+    expect(current.undoDenied).toBeNull();
+    await as(first); await call('connect'); await sync();
+    expect(current.undoDenied).toMatchObject({ id: request.id, target: request.target });
+    expect(current.undoBlocked).toBe(true);
+    await as(current.turnSeat); await call('snapshot'); await call('move', { x: 8, y: 8 });
+    await as(first); await call('snapshot'); await call('move', { x: 6, y: 6 });
+    expect(current.undoBlocked).toBe(false);
+    await alive(30000); await requestUndo(); expect(current.accepted).toBe(true);
+    expect(current.undoRequest?.target).not.toBe(request.target);
+    expect(current.undoDenied).toBeNull();
   });
   it('undo is limited to two successes and enforces a thirty-second request cooldown', async () => {
     const first = await moveFirst(); let request = await requestUndo();
@@ -287,7 +311,7 @@ describe('game RPC on isolated PostgreSQL with controlled server clock', () => {
     const first = await moveFirst(20000); await alive(24000); await requestUndo(); const frozen = current.remainingMs;
     await time(50000); await as((3 - first) as Seat); await call('snapshot');
     expect(current).toMatchObject({ phase: 'paused', undoRequest: null, remainingMs: frozen });
-    const deadline = current.offlineDeadline; expect(deadline).toBe(baseTime + 349000);
+    const deadline = current.offlineDeadline; expect(deadline).toBe(baseTime + 339000);
     await sync(); await as(first); await call('connect'); await sync();
     expect(current).toMatchObject({ phase: 'running', remainingMs: frozen });
     await requestUndo(); expect(current.rejection).toBe('undo_already_requested');

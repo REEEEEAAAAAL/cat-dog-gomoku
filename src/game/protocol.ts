@@ -36,6 +36,8 @@ export interface Snapshot {
   duplicate: boolean;
   undoRequest: UndoRequest | null;
   emojis: ReactionEvent[];
+  undoDenied?: { id: string; target: string; at: number } | null;
+  undoBlocked?: boolean;
 }
 export type Reply = Pending | Snapshot;
 export interface Command {
@@ -77,6 +79,9 @@ export function isReply(value: unknown): value is Reply {
       && seat(value.undoRequest.seat) && typeof value.undoRequest.target === 'string'
       && [1, 2].includes(Number(value.undoRequest.removeCount)) && number(value.undoRequest.restoreMs)
       && number(value.undoRequest.expiresAt)))
+    && (value.undoBlocked === undefined || typeof value.undoBlocked === 'boolean')
+    && (value.undoDenied === undefined || value.undoDenied === null || (object(value.undoDenied)
+      && typeof value.undoDenied.id === 'string' && typeof value.undoDenied.target === 'string' && number(value.undoDenied.at)))
     && Array.isArray(value.emojis) && value.emojis.length <= 20 && value.emojis.every(e => object(e)
       && typeof e.id === 'string' && seat(e.seat) && typeof e.emoji === 'string' && Object.hasOwn(reactions, e.emoji) && number(e.at));
 }
@@ -93,7 +98,7 @@ const messages: Record<string, string> = {
   invalid_position: '请选择棋盘上的空交叉点', wrong_phase: '当前状态无法执行此操作',
   application_changed: '加入申请已变化，请核对后重试', protocol_mismatch: '网页版本已更新，请刷新',
   undo_limit: '本局两次悔棋机会已用完', no_undo_move: '你还没有落子，暂时不能悔棋',
-  undo_target_changed: '最近棋步已变化，请重新核对悔棋范围', undo_already_requested: '这一步已经申请过悔棋，请继续对局',
+  undo_target_changed: '最近棋步已变化，请重新核对悔棋范围', undo_already_requested: '你本轮申请过但是失败了，下次再试试吧~',
   undo_cooldown: '请等上次申请满 30 秒后再试', undo_expired: '悔棋申请已结束或过期',
   invalid_emoji: '请选择提供的表情', emoji_rate_limit: '表情发得太快啦，稍等一下',
   connect_required: '正在同步房间身份',

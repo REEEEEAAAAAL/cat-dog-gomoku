@@ -1,24 +1,37 @@
 import { test, expect } from '@playwright/test';
 import type { Browser, BrowserContext, Page } from '@playwright/test';
 import type { Snapshot } from '../../src/game/protocol';
+import { writeFile } from 'node:fs/promises';
+
+test.beforeEach(async ({ context }) => {
+  if (process.env.GOMOKU_LOCAL_SQL || process.env.GOMOKU_URL?.startsWith('http://127.0.0.1')) {
+    await context.route(/https:\/\/.*tcloudbase/, route => route.abort('blockedbyclient'));
+  }
+});
 
 async function enter(page: Page, path = './') {
+  if (process.env.GOMOKU_LOCAL_SQL || process.env.GOMOKU_URL?.startsWith('http://127.0.0.1')) {
+    await page.route(/https:\/\/.*tcloudbase/, route => route.abort('blockedbyclient'));
+  }
   await page.goto(path);
   if (await page.title() === '风险提醒') {
     await page.getByText('确定访问', { exact: false }).click();
     await expect(page.locator('#create')).toBeVisible();
     if (path !== './') await page.goto(path);
   }
-  await expect(page).toHaveTitle('狗狗与猫猫 · 五子棋');
+  await expect(page).toHaveTitle('猫猫与狗狗 · 五子棋');
   await expect(page.locator('#dog svg')).toBeVisible();
   await expect(page.locator('#create')).toHaveCSS('min-height', '46px');
 }
 
-async function pair(browser: Browser, mobile = false) {
+async function pair(browser: Browser, mobile = false, bothDesktop = false) {
   const contexts = await Promise.all([browser.newContext({ viewport: { width: mobile ? 390 : 1280, height: 844 }, hasTouch: mobile }),
-    browser.newContext({ viewport: { width: 360, height: 800 }, hasTouch: true })]);
+    browser.newContext({ viewport: { width: bothDesktop ? 1280 : 360, height: bothDesktop ? 900 : 800 }, hasTouch: !bothDesktop })]);
   const [a, b] = await Promise.all(contexts.map(c => c.newPage()));
   const errors: string[] = [];
+  if (process.env.GOMOKU_LOCAL_SQL || process.env.GOMOKU_URL?.startsWith('http://127.0.0.1')) {
+    for (const context of contexts) await context.route(/https:\/\/.*tcloudbase/, route => route.abort('blockedbyclient'));
+  }
   for (const p of [a, b]) p.on('pageerror', error => errors.push(error.message));
   let state: Snapshot | null = null;
   const snapshots: Snapshot[] = [];
@@ -37,18 +50,19 @@ async function pair(browser: Browser, mobile = false) {
   await a.locator('#approve').click();
   await expect(b.locator('#ready')).toBeEnabled();
   await a.locator('#ready').click(); await b.locator('#ready').click();
-  await expect(a.locator('#gameStatus')).toContainText('的回合');
-  await expect(b.locator('#gameStatus')).toContainText('的回合');
+  await expect(a.locator('#gameStatus')).toContainText(/的回合|你的回合/);
+  await expect(b.locator('#gameStatus')).toContainText(/的回合|你的回合/);
   return { contexts, a, b, errors, snapshots, state: () => state! };
 }
 
 async function play(page: Page, x: number, y: number, touch = false) {
   const cell = page.locator(`#board button[data-x="${x}"][data-y="${y}"]`);
   await expect(cell).toHaveAttribute('aria-disabled', 'false');
-  if (touch) { await cell.tap(); await expect(page.locator('#confirm')).toBeEnabled(); }
+  if (touch) await cell.tap(); else await cell.click();
+  await expect(page.locator('#confirm')).toBeEnabled();
   const [response] = await Promise.all([
     page.waitForResponse(r => r.url().endsWith('/rpc/gomoku_command') && r.request().postDataJSON()?.p_action === 'move'),
-    touch ? page.locator('#confirm').tap() : cell.click(),
+    touch ? page.locator('#confirm').tap() : page.locator('#confirm').click(),
   ]);
   const snapshot = await response.json() as Snapshot;
   expect(snapshot.accepted).toBe(true);
@@ -67,7 +81,7 @@ test('home supports narrow phones and desktop without overflow', async ({ page }
 });
 
 test('two players complete a real game, approve entry, recover a lost acknowledgement, rematch, refresh and reject outsiders', async ({ browser }) => {
-  test.skip(!process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL);
+  test.skip(!process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL && !process.env.GOMOKU_LOCAL_SQL);
   const game = await pair(browser);
   const { a, b, contexts } = game;
   try {
@@ -84,7 +98,7 @@ test('two players complete a real game, approve entry, recover a lost acknowledg
     });
     const cell = black.locator('#board button[data-x="0"][data-y="0"]');
     await expect(cell).toHaveAttribute('aria-disabled', 'false');
-    if (black === b) { await cell.tap(); await black.locator('#confirm').tap(); } else await cell.click();
+    await cell.click(); await black.locator('#confirm').click();
     await expect(black.locator('#retry')).toBeVisible();
     await black.locator('#retry').click();
     await expect(black.locator('#board .stone:not(.preview)')).toHaveCount(1);
@@ -96,12 +110,17 @@ test('two players complete a real game, approve entry, recover a lost acknowledg
     }
     await expect(a.locator('#gameStatus')).toContainText('获胜');
     await expect(b.locator('#gameStatus')).toContainText('获胜');
+    for (const p of [a,b]) { await expect(p.locator('#resultPanel')).toBeVisible(); await expect(p.locator('#resultTitle')).toContainText('赢啦！'); }
+    await a.screenshot({ path: 'docs/internal/game-victory.png', fullPage: true });
+    await a.reload(); await expect(a.locator('#resultPanel')).toBeVisible();
     expect(await a.locator('#gameStatus').textContent()).toBe(await b.locator('#gameStatus').textContent());
     await expect(a.locator('#board .stone:not(.preview)')).toHaveCount(9);
     await expect(b.locator('#board .stone:not(.preview)')).toHaveCount(9);
     const oldBlack = game.state().blackSeat;
     await a.locator('#rematch').click(); await expect(a.locator('#board .stone')).toHaveCount(9);
-    await b.locator('#rematch').click();
+    await expect(b.locator('#rematchPanel')).toContainText('对方邀请你再来一局喔😊');
+    await b.reload(); await expect(b.locator('#rematchPanel')).toBeVisible();
+    await b.locator('#acceptRematch').click();
     await expect(a.locator('#round')).toHaveText('02'); await expect(b.locator('#round')).toHaveText('02');
     expect(game.state().blackSeat).toBe(3 - oldBlack);
     await expect(a.locator('#board .stone')).toHaveCount(0);
@@ -109,7 +128,7 @@ test('two players complete a real game, approve entry, recover a lost acknowledg
     await play(nextBlack, 7, 7, nextBlack === b);
     await a.reload();
     await expect(a.locator('#board .stone:not(.preview)')).toHaveCount(1);
-    await expect(a.locator('#gameStatus')).toContainText('的回合');
+    await expect(a.locator('#gameStatus')).toContainText(/的回合|你的回合/);
     for (const p of [a, b]) {
       await expect(p.locator('#selfPlayer')).toContainText('（你）');
       await expect(p.locator('#opponentPlayer')).toContainText('（对方）');
@@ -144,7 +163,7 @@ test('two players complete a real game, approve entry, recover a lost acknowledg
 });
 
 test('touch preview, adjustment, cancel, scroll gesture and keyboard confirmation', async ({ browser }) => {
-  test.skip(!process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL);
+  test.skip(!process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL && !process.env.GOMOKU_LOCAL_SQL);
   const game = await pair(browser, true);
   const { a, b, contexts } = game;
   try {
@@ -170,28 +189,38 @@ test('touch preview, adjustment, cancel, scroll gesture and keyboard confirmatio
 });
 
 test('public authoritative timeout and disconnect pause/resume', async ({ browser }) => {
-  test.skip(!process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL);
+  test.skip(!process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL && !process.env.GOMOKU_LOCAL_SQL);
   test.setTimeout(200000);
   const game = await pair(browser);
   const { a, b, contexts } = game;
   try {
+    await a.bringToFront();
+    expect(await a.evaluate(() => document.hidden)).toBe(false);
+    const offlineAt = Date.now();
+    await b.route('**/rpc/gomoku_command', route => route.abort('internetdisconnected'));
     await contexts[1].setOffline(true);
-    await expect(a.locator('#gameStatus')).toHaveText('等你们重新连上', { timeout: 45000 });
+    await expect(a.locator('#gameStatus')).toHaveText('等你们重新连上', { timeout: 25000 });
+    const detectedMs = Date.now() - offlineAt;
+    expect(detectedMs).toBeLessThan(25000);
+    await test.info().attach('disconnect-detection-ms', { body: String(detectedMs), contentType: 'text/plain' });
+    await writeFile(test.info().outputPath('disconnect-detection-ms.txt'), String(detectedMs));
     const paused = await a.locator('#clock').textContent();
     await expect.poll(async () => a.locator('#clock').textContent(), { timeout: 3000 }).toBe(paused);
+    await b.unroute('**/rpc/gomoku_command');
     await contexts[1].setOffline(false);
-    await expect(a.locator('#gameStatus')).toContainText('的回合', { timeout: 20000 });
-    await expect(b.locator('#gameStatus')).toContainText('的回合');
+    await expect(a.locator('#gameStatus')).toContainText(/的回合|你的回合/, { timeout: 20000 });
+    await expect(b.locator('#gameStatus')).toContainText(/的回合|你的回合/);
     await expect(a.locator('#gameStatus')).toContainText('获胜', { timeout: 70000 });
     await expect(b.locator('#gameStatus')).toContainText('获胜');
     await expect(a.locator('#lobbyText')).toContainText('超时');
+    for (const p of [a,b]) { await expect(p.locator('#resultPanel')).toBeVisible(); await expect(p.locator('#resultReason')).toContainText('行棋超时'); }
     expect(await a.locator('#gameStatus').textContent()).toBe(await b.locator('#gameStatus').textContent());
     expect(game.errors).toEqual([]);
   } finally { await finish(contexts); }
 });
 
 test('mutual undo, exact impact, emoji delivery while paused and refreshed requests', async ({ browser }) => {
-  test.skip(!process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL);
+  test.skip(!process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL && !process.env.GOMOKU_LOCAL_SQL);
   const game = await pair(browser);
   const { a, b, contexts } = game;
   try {
@@ -233,7 +262,7 @@ test('mutual undo, exact impact, emoji delivery while paused and refreshed reque
     await expect(white.locator('#board .stone:not(.preview)')).toHaveCount(0);
     await expect(black.locator('#selfPlayer')).toContainText('悔棋：剩余1次');
     await expect(white.locator('#opponentPlayer')).toContainText('悔棋：剩余1次');
-    await expect(black.locator('#gameStatus')).toContainText('的回合');
+    await expect(black.locator('#gameStatus')).toContainText(/的回合|你的回合/);
     await expect(black.locator('#board button[data-x="6"][data-y="6"]')).toHaveAttribute('aria-disabled', 'false');
     await black.screenshot({ path: 'docs/internal/game-interactions.png', fullPage: true });
     expect(game.errors).toEqual([]);
@@ -241,7 +270,7 @@ test('mutual undo, exact impact, emoji delivery while paused and refreshed reque
 });
 
 test('invalid rooms stop requesting and withdrawn or rejected applications stay withdrawn', async ({ browser }) => {
-  test.skip(!process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL);
+  test.skip(!process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL && !process.env.GOMOKU_LOCAL_SQL);
   const contexts = await Promise.all([browser.newContext(), browser.newContext({ viewport: { width: 360, height: 800 }, hasTouch: true })]);
   const [a, b] = await Promise.all(contexts.map(c => c.newPage()));
   const errors: string[] = [];
@@ -296,4 +325,93 @@ test('public five-minute absence aborts without a winner and allows a mutual new
     await expect(a.locator('#round')).toHaveText('02'); await expect(b.locator('#round')).toHaveText('02');
     expect(game.errors).toEqual([]);
   } finally { await finish(contexts); }
+});
+
+test('clipboard success is explicit, restores labels and handles unavailable clipboard', async ({ browser }) => {
+  test.skip(!process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL && !process.env.GOMOKU_LOCAL_SQL);
+  const {a,b,contexts} = await pair(browser);
+  try {
+    await a.evaluate(() => { Object.defineProperty(navigator, 'clipboard', { configurable:true, value:{ writeText: async (value: string) => { sessionStorage.setItem('copied-value',value); } } }); });
+    await a.locator('#invite').click();
+    await expect(a.locator('#invite')).toHaveText('复制成功！发送给对方让TA加入吧~');
+    expect(await a.evaluate(() => sessionStorage.getItem('copied-value'))).toContain(await a.locator('#roomCode').textContent());
+    await a.setViewportSize({width:320,height:844});
+    expect(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await a.locator('#copyCode').click(); await expect(a.locator('#copyCode')).toHaveText('房间码复制成功！');
+    expect(await a.evaluate(() => sessionStorage.getItem('copied-value'))).toBe(await a.locator('#roomCode').textContent());
+    await expect(a.locator('#invite')).toHaveText('复制邀请链接',{timeout:6500});
+    await b.evaluate(() => { Object.defineProperty(navigator,'clipboard',{configurable:true,value:undefined}); });
+    await b.locator('#copyCode').click(); await expect(b.locator('#copyStatus')).toContainText('复制失败');
+    expect(await b.locator('#copyFallback').inputValue()).toBe(await b.locator('#roomCode').textContent());
+    await expect(b.locator('#copyCode')).toHaveText('复制房间码');
+  } finally { await finish(contexts); }
+});
+
+test('mouse previews and moves only once after confirmation and server acknowledgement', async ({ browser }) => {
+  test.skip(!process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL && !process.env.GOMOKU_LOCAL_SQL);
+  const game = await pair(browser, false, true); const {a,b,contexts}=game;
+  try {
+    const p=game.state().blackSeat===1?a:b;
+    let moves=0;
+    p.on('request',r=>{if(r.url().endsWith('/rpc/gomoku_command') && r.postDataJSON()?.p_action==='move') moves++;});
+    const cell=p.locator('#board button[data-x="7"][data-y="7"]');
+    await expect(p.locator('#selfPlayer .turn-orbit')).toBeVisible();
+    await expect(p.locator('#opponentPlayer .turn-orbit')).toHaveCount(0);
+    await p.emulateMedia({ reducedMotion: 'reduce' });
+    await expect(p.locator('.turn-orbit')).toBeHidden();
+    await p.emulateMedia({ reducedMotion: 'no-preference' });
+    await cell.click(); await expect(p.locator('#board .preview')).toHaveCount(1);
+    await p.screenshot({ path: 'docs/internal/game-preview-orbit.png', fullPage: true });
+    const controls = await p.locator('#moveControls').boundingBox(), selected = await cell.boundingBox();
+    expect(Math.abs(controls!.y - selected!.y)).toBeLessThan(100);
+    await p.locator('#board button[data-x="8"][data-y="7"]').click();
+    await expect(p.locator('#selectionHint')).toContainText('I8'); expect(moves).toBe(0);
+    let release=()=>{}; const held=new Promise<void>(resolve=>{release=resolve;});
+    let observed=()=>{}; const requested=new Promise<void>(resolve=>{observed=resolve;});
+    await p.route('**/rpc/gomoku_command',async route=>{
+      if(route.request().postDataJSON()?.p_action==='move'){const response=await route.fetch();observed();await held;await route.fulfill({response});}
+      else await route.continue();
+    });
+    await p.locator('#confirm').click(); await requested;
+    await expect(p.locator('#confirm')).toBeDisabled();
+    await expect(p.locator('#board .stone:not(.preview)')).toHaveCount(0);
+    await p.locator('#confirm').dispatchEvent('click'); expect(moves).toBe(1);
+    release(); await p.unrouteAll({behavior:'wait'});
+    await expect(p.locator('#board .stone:not(.preview)')).toHaveCount(1);
+    await expect(p.locator('#opponentPlayer .turn-orbit')).toBeVisible();
+    await expect(p.locator('#selfPlayer .turn-orbit')).toHaveCount(0);
+    await expect(p.locator('#confirm')).toBeDisabled();
+    expect(game.errors).toEqual([]);
+  } finally {await finish(contexts);}
+});
+
+test('undo refusal stays noticeable and repeated target gives feedback after refresh', async ({browser})=>{
+  test.skip(!process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL && !process.env.GOMOKU_LOCAL_SQL);
+  const game=await pair(browser);const {a,b,contexts}=game;
+  try{
+    const p=game.state().blackSeat===1?a:b, other=p===a?b:a;
+    await play(p,7,7,p===b);await p.locator('#undo').click();await p.locator('#requestUndo').click();
+    await expect(other.locator('#denyUndo')).toBeVisible();await other.locator('#denyUndo').click();
+    await expect(other.locator('#undoPanel')).toBeHidden();
+    await expect(p.locator('#feedback')).toContainText('对方残忍拒绝了你的悔棋申请😭');
+    await p.waitForTimeout(5500);await expect(p.locator('#feedback')).toBeVisible();
+    await p.reload();await expect(p.locator('#undo')).toBeEnabled();await p.locator('#undo').click();
+    await expect(p.locator('#feedback')).toContainText('你本轮申请过但是失败了，下次再试试吧~');
+    await expect(p.locator('#undoDialog')).not.toBeVisible();
+    await expect(p.locator('#selfPlayer')).toContainText('剩余2次');
+    expect(game.errors).toEqual([]);
+  }finally{await finish(contexts);}
+});
+
+test('idle waiting pages stop polling and resume on activity', async ({page})=>{
+  test.skip(!process.env.GOMOKU_LOCAL_SQL && !process.env.GOMOKU_URL?.startsWith('http://127.0.0.1'));
+  await page.clock.install();await enter(page);await page.locator('#create').click();
+  await expect(page.locator('#roomCode')).toHaveText(/^[A-F0-9]{10}$/);
+  await page.clock.fastForward(121000);
+  await expect(page.locator('#notice')).toContainText('暂歇自动同步');
+  let requests=0;page.on('request',r=>{if(r.url().endsWith('/rpc/gomoku_command'))requests++;});
+  await page.clock.fastForward(600000);expect(requests).toBe(0);
+  await page.locator('#roomCode').click();await page.clock.fastForward(5000);
+  await expect.poll(()=>requests).toBeGreaterThan(0);
+  await expect(page.locator('#notice')).toContainText('连接正常');
 });

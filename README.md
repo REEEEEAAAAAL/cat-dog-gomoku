@@ -2,14 +2,14 @@
 
 A private two-player browser Gomoku game built with TypeScript and Vite. Choose a dog or cat identity, share an invitation, approve your partner, and play on a 15×15 board. No account registration is needed.
 
-The active backend is CloudBase PostgreSQL HTTP RPC. Visible pages poll every five seconds; peer updates can take one polling interval. Each command locks its room row, validates identity, game, version, turn and position, and persists state before returning a snapshot.
+The active backend is CloudBase PostgreSQL HTTP RPC. Active, visible pages poll every five seconds; peer updates can take one polling interval. Waiting and finished pages stop polling after two minutes without interaction and resume on activity or reconnect. Hidden pages do not poll. Each command locks its room row, validates identity, game, version, turn and position, and persists state before returning a snapshot. A 15-second heartbeat lease tolerates short interruptions before pausing the game.
 
 ## Play
 
 1. Choose an identity and optionally enter a nickname, then create a room.
 2. Send the invitation link or ten-character room code to your partner. The host approves the joining player. Pending players can withdraw; a rejected request requires a new explicit application.
 3. Both players select the ready button. Black plays first; initial colors are random.
-4. On a phone, tap an intersection to preview, then confirm. Mouse clicks place directly. Arrow keys select a point; Enter previews, and the confirmation button submits.
+4. On phones and computers, select an intersection to preview, then choose `确认落子` to submit. Select another point to adjust the preview. Arrow keys select a point; Enter previews, and the confirmation button submits. Stones become final only after the server acknowledges them.
 5. Five or more connected stones win. A full board without a winning line is a draw. Both players must request another round; colors then swap while animal identities stay the same.
 
 Your partner appears above the board, and you appear below it. The server allows 60 seconds per turn. Missing heartbeats pause play and preserve the remaining time; both players must reconnect and acknowledge synchronization within five minutes. Otherwise the round ends without a winner. Settlement is lazy on the next RPC when both players are absent. Refresh restores the room using the browser's native anonymous session. New tabs take over that browser's seat; the old tab is disabled. Explicitly leaving closes the room for both players. Invalid, expired and closed rooms stop making automatic requests; a closed room is removed from the resume shortcut. Rooms expire after 24 hours.
@@ -36,7 +36,16 @@ npm run test:cloudbase-page
 
 Scripts invoke Node entrypoints directly because Windows command shims can fail when the checkout path contains `&`. The game uses native DOM and SVG without a frontend framework. The CloudBase SDK produces the existing large-chunk Vite advisory; it does not prevent the build.
 
-`npm test` uses isolated PGlite PostgreSQL instances and a controlled server clock, plus rule, HTTP timeout and legacy session tests. It needs no cloud credentials and makes no network calls. Browser tests use the installed Microsoft Edge. Live multiplayer checks require opt-in because they create disposable rooms and anonymous sessions in the configured environment:
+`npm test` uses isolated PGlite PostgreSQL instances and a controlled server clock, plus rule, HTTP timeout and legacy session tests. It needs no cloud credentials and makes no network calls. Browser tests use the installed Microsoft Edge, or Chrome with `GOMOKU_BROWSER=chrome`.
+
+Run the complete browser flow with the real SQL functions in a local PGlite instance:
+
+```powershell
+$env:GOMOKU_LOCAL_SQL = '1'
+npm run test:game-page
+```
+
+The local configuration replaces the API module and blocks CloudBase requests in browser tests. It does not test CloudBase authentication. Clear `GOMOKU_LOCAL_SQL` before using a real backend. Live multiplayer checks require opt-in because they create disposable rooms and anonymous sessions in the configured environment:
 
 ```powershell
 $env:GOMOKU_URL = 'https://your-existing-host/gomoku/'
