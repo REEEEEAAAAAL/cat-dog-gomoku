@@ -144,6 +144,12 @@ test('home supports narrow phones and desktop without overflow', async ({ page }
     });
     expect(mark).toEqual({ blackWidth:'20px', blackHeight:'20px', whiteWidth:'20px', whiteHeight:'20px', radius:'50%' });
     if (width >= 900) {
+      const inset = Math.max(0, (width - 1160) / 2) + 56;
+      for (const selector of ['.masthead', 'main', 'footer']) {
+        const box = await page.locator(selector).boundingBox();
+        expect(Math.abs(box!.x - inset)).toBeLessThan(1);
+        expect(Math.abs(width - box!.x - box!.width - inset)).toBeLessThan(1);
+      }
       const caption = await page.locator('.intro-caption').boundingBox();
       const avatars = await page.locator('#introArt .avatar').all();
       const bounds = await Promise.all(avatars.map(avatar => avatar.boundingBox()));

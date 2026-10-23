@@ -80,7 +80,7 @@ function home() {
   idlePaused = false;
   document.querySelectorAll<HTMLDialogElement>('dialog').forEach(dialog => dialog.close());
   history.replaceState(null, '', location.pathname); el('copyFallback').hidden = true;
-  el('entryTitle').textContent = '今天，你是谁？'; render();
+  el('entryTitle').textContent = 'Hello，你是谁？'; render();
 }
 
 function failure(error: unknown) {
