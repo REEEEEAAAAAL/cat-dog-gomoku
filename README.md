@@ -1,109 +1,120 @@
 # Cat & Dog Gomoku
 
-A private two-player browser Gomoku game built with TypeScript and Vite. Choose a dog or cat identity, share an invitation, approve your partner, and play on a 15×15 board. No account registration is needed.
+English | [简体中文](README.zh-CN.md)
 
-The active backend is CloudBase PostgreSQL HTTP RPC. Active, visible pages poll every five seconds; peer updates can take one polling interval. Waiting and finished pages stop polling after two minutes without interaction and resume on activity or reconnect. Hidden pages do not poll. Each command locks its room row, validates identity, game, version, turn and position, and persists state before returning a snapshot. A 15-second heartbeat lease tolerates short interruptions before pausing the game.
+A small online Gomoku game for two people. Pick a cat or dog, send an invitation, and play together on a 15×15 board. Built for phones and desktops, with no account registration and a Simplified Chinese interface.
 
-## Play
+[Play online](https://cat-and-dog-gomoku-d4c9e5cfbbfc0-1513741929.tcloudbaseapp.com/gomoku/)
 
-1. Choose an identity and optionally enter a nickname, then create a room.
-2. Send the invitation link or ten-character room code to your partner. The host approves the joining player. Pending players can withdraw; a rejected request requires a new explicit application.
-3. Both players select the ready button. Black plays first; initial colors are random.
-4. On phones and computers, select an intersection to preview, then choose `确认落子` to submit. Select another point to adjust the preview. Arrow keys select a point; Enter previews, and the confirmation button submits. Stones become final only after the server acknowledges them.
-5. Five or more connected stones win. A full board without a winning line is a draw. Both players must request another round; colors then swap while animal identities stay the same.
+The hosted game uses a CloudBase trial environment with limited validity and quotas. Its default domain may show a confirmation page before opening the game.
 
-Your partner appears above the board, and you appear below it. The server allows 60 seconds per turn. Missing heartbeats pause play and preserve the remaining time; both players must reconnect and acknowledge synchronization within five minutes. Otherwise the round ends without a winner. Settlement is lazy on the next RPC when both players are absent. Refresh restores the room using the browser's native anonymous session. New tabs take over that browser's seat; the old tab is disabled. Explicitly leaving closes the room for both players. Invalid, expired and closed rooms stop making automatic requests; a closed room is removed from the resume shortcut. Rooms expire after 24 hours.
+## Features
 
-## Develop and verify
+- Private rooms with invitation links or ten-character codes, host approval, and readiness from both players.
+- Five or more stones in a row wins. Preview a position, then confirm the move to avoid accidental placement; mouse, touch, and keyboard are supported.
+- Server-managed 60-second turns, disconnect pauses, and recovery after refresh. A five-minute unresolved disconnect ends the round without a winner.
+- Negotiated undo, up to two successful uses per player per round; both players review the affected stones before approval.
+- Rematches with swapped colors, eight fixed reactions, and local sound effects with a persistent mute setting.
 
-Use Node.js 22 or newer and npm. Node.js 24 is the verified development version.
+There is no matchmaking, spectator mode, free-text chat, or computer opponent. An invitation grants permission to apply, not ownership of a player's seat. Returning players use the same browser session; another browser cannot take over their identity. Leaving closes the room for both players, and rooms expire after 24 hours.
+
+## Screenshots
+
+Current UI captured in a local two-browser game using the real SQL migrations. The phone image uses a simulated viewport.
+
+![Desktop game](docs/screenshots/desktop.png)
+
+<img src="docs/screenshots/mobile.png" alt="Game at a 390-pixel phone viewport" width="390" />
+
+## Design
+
+The frontend uses strict TypeScript, Vite, native DOM/SVG, and Web Audio. CloudBase provides anonymous sessions, static hosting, and a PostgreSQL HTTP RPC backend. Vitest, PGlite, and Playwright cover rules, SQL behavior, and browser flows.
+
+- **The server decides.** Each `gomoku_command` call locks the room row, validates the player, game, version, turn, and position, and persists state before acknowledging it. Browsers cannot directly read or write the game table. A preview becomes a stone only after confirmation from the server.
+- **Retries preserve intent.** Operation IDs and stored receipts prevent duplicate moves after a lost response. An uncertain result remains visible for retry and reconciliation. Refresh restores the session, and a new tab takes over that browser's seat.
+- **Polling keeps deployment simple.** Active, visible pages poll every five seconds, so partner updates can take one polling interval. Hidden pages stop polling; waiting and finished pages also rest after two minutes without interaction. A 15-second heartbeat lease tolerates brief interruptions before pausing play.
+- **Time survives reconnects.** PostgreSQL stores deadlines and remaining time. Both players must reconnect and acknowledge synchronization to resume. Expired timers are settled by the next RPC, including when both players have been absent; there is no background scheduler.
+
+The game uses HTTP polling rather than PostgreSQL Realtime. An earlier Cloudflare Workers/SQLite Durable Objects candidate remains in the repository as historical source, separate from the active deployment.
+
+## Run locally
+
+Use Node.js 22 or newer and npm; development has been verified on Node.js 24.
 
 ```sh
 npm ci
 ```
 
-Copy `.env.example` to the ignored `.env.local` and configure the existing environment ID and a frontend publishable key. Never use management credentials in Vite variables.
+For a fully local game with an in-memory PostgreSQL-compatible database and no cloud credentials:
+
+```sh
+node node_modules/vite/bin/vite.js --config game.test.config.ts --configLoader runner --host 127.0.0.1 --port 18790
+```
+
+Open `http://127.0.0.1:18790` in two separate browser profiles or a normal and private window. Create a room, share its invitation, approve the other player, and ready up. This development adapter bypasses CloudBase authentication and loses its data when stopped; do not deploy it.
+
+To work against your own CloudBase backend, copy `.env.example` to `.env.local`, set `VITE_CLOUDBASE_ENV_ID` and `VITE_CLOUDBASE_PUBLISHABLE_KEY`, and run:
 
 ```sh
 npm run dev
+```
+
+This requires a PostgreSQL environment with anonymous login, an allowed web origin, and the migrations below. The current client configures the Shanghai region. Vite variables are embedded in the browser bundle: use only a frontend publishable key, never management credentials.
+
+## Tests and builds
+
+```sh
 npm run typecheck
 npm run lint
 npm test
 npm run build:cloudbase
-npm run test:game-page
-npm run test:cloudbase-page
 ```
 
-Scripts invoke Node entrypoints directly because Windows command shims can fail when the checkout path contains `&`. The game uses native DOM and SVG without a frontend framework. The CloudBase SDK produces the existing large-chunk Vite advisory; it does not prevent the build.
+Unit tests run the SQL migrations in isolated PGlite instances with a controlled server clock, alongside protocol, rules, audio-event, HTTP, and legacy-session tests. They require no cloud credentials.
 
-`npm test` uses isolated PGlite PostgreSQL instances and a controlled server clock, plus rule, HTTP timeout and legacy session tests. It needs no cloud credentials and makes no network calls. Browser tests use the installed Microsoft Edge, or Chrome with `GOMOKU_BROWSER=chrome`.
-
-Run the complete browser flow with the real SQL functions in a local PGlite instance:
+Browser tests use installed Microsoft Edge by default. Set `GOMOKU_BROWSER=chrome` to use installed Google Chrome. To run the game flows against local SQL in PowerShell:
 
 ```powershell
 $env:GOMOKU_LOCAL_SQL = '1'
 npm run test:game-page
+Remove-Item Env:GOMOKU_LOCAL_SQL
 ```
 
-The local configuration replaces the API module and blocks CloudBase requests in browser tests. It does not test CloudBase authentication. Clear `GOMOKU_LOCAL_SQL` before using a real backend. Live multiplayer checks require opt-in because they create disposable rooms and anonymous sessions in the configured environment:
+On macOS/Linux, use `GOMOKU_LOCAL_SQL=1 GOMOKU_BROWSER=chrome npm run test:game-page`. Local game tests block CloudBase requests and cover two-player play, lost acknowledgements, refresh, undo, invitations, audio, and responsive controls. They do not validate cloud authentication or physical mobile devices. Screenshots and failures go to the ignored `test-results/` directory.
 
-```powershell
-$env:GOMOKU_URL = 'https://your-existing-host/gomoku/'
-npm run test:game-page
+Live tests are opt-in and create rooms and anonymous sessions in the chosen environment. Set `GOMOKU_URL` to its full `/gomoku/` URL, or set `GOMOKU_LIVE_LOCAL=1` to use a built local preview with your configured backend. Clear `GOMOKU_LOCAL_SQL` first. `GOMOKU_LONG_TEST=1` additionally enables the five-minute absence case. `npm run test:cloudbase-page` checks the separate diagnostic page; its public tests require `CLOUDBASE_DIAGNOSTIC_URL`.
 
-# Includes a real five-minute absence; allow about six minutes for that case.
-$env:GOMOKU_LONG_TEST = '1'
-npm run test:game-page
-```
+Scripts call Node entrypoints directly to support Windows checkout paths containing `&`. The CloudBase SDK currently produces a Vite large-chunk advisory; the build still succeeds.
 
-To check a local preview against the real configured backend, set `GOMOKU_LIVE_LOCAL=1` instead of `GOMOKU_URL`. Public automated browser checks do not establish mainland physical-device compatibility. New-game manual acceptance still requires two real phones and networks.
+## Deploy
 
-## Deploy to the existing free environment
-
-`npm run build:cloudbase` only builds and packages files:
-
-- `dist/cloudbase/game/`: game assets.
-- `dist/cloudbase/site/`: preserved Stage 0 diagnostic page.
-- `dist/cloudbase/database/`: versioned SQL migrations; do not upload this directory as a website.
-
-With CloudBase CLI already authenticated to the intended domestic environment, inspect migrations, preview the additive changes, apply them, and verify recorded history. Never rewrite an applied migration.
+Use your own CloudBase PostgreSQL environment and authenticated CLI. Replace the project-specific `envId` in `cloudbaserc.json`, configure anonymous login and allowed web origins, and set `.env.local` before building. Verify the target and its billing settings before applying changes.
 
 ```sh
-tcb db pg migration list --env-id YOUR_EXISTING_ENV_ID
-tcb db pg migration up --dry-run --env-id YOUR_EXISTING_ENV_ID
-tcb db pg migration up --env-id YOUR_EXISTING_ENV_ID --yes
-tcb db pg migration list --env-id YOUR_EXISTING_ENV_ID
-tcb hosting deploy ./dist/cloudbase/game gomoku --env-id YOUR_EXISTING_ENV_ID --verify
+npm run build:cloudbase
+tcb db pg migration list --env-id YOUR_ENV_ID
+tcb db pg migration up --dry-run --env-id YOUR_ENV_ID
+tcb db pg migration up --env-id YOUR_ENV_ID --yes
+tcb db pg migration list --env-id YOUR_ENV_ID
+tcb hosting deploy ./dist/cloudbase/game gomoku --env-id YOUR_ENV_ID --verify
 ```
 
-Fragment-based invitations need no custom routing for refresh. This adds a `gomoku/` path to existing hosting without replacing `gomoku-diag/`, creating an environment, enabling Realtime, upgrading a plan or enabling overage. Keep existing hashed assets for recovery. Rebuilding and uploading a saved game build restores the frontend; leave additive migrations in place.
+Apply the ordered files in `cloudbase/migrations/` without editing previously applied migrations. They include the separate diagnostic schema as well as the game schema. The build packages game assets in `dist/cloudbase/game/`, diagnostic assets in `dist/cloudbase/site/`, and SQL in `dist/cloudbase/database/`. Upload only the intended frontend directory. The optional diagnostic page can be deployed separately to `gomoku-diag/`.
 
-The current environment is a free trial with a finite validity period and quotas, not a promise of perpetual free hosting. Do not enable paid resources, automatic renewal or overage without authorization.
+Invitations use URL fragments and need no custom server routing. Save the previous frontend build before replacing it, retain old hashed assets, and avoid `--prune` when a rollback may be needed. Restore a saved frontend build to roll back the website; database recovery must be reviewed separately, without deleting migration history.
 
-## Architecture and boundaries
+## Source layout
 
-`src/game/` owns rendering, protocol validation and native CloudBase sessions. The versioned `gomoku_command` RPC owns all game decisions. `gomoku_rooms` is separate from `gomoku_diag_probe`; browsers have no direct game-table read or write grants. Pending applicants receive no board data, and a third visitor cannot join a full room. Mutation receipts support safe retries after a lost acknowledgement. Uncertain operations remain visible for explicit retry instead of submitting another move silently.
+| Path | Purpose |
+| --- | --- |
+| `src/game/`, `game/` | Current game UI, protocol, sessions, and static assets |
+| `cloudbase/migrations/` | Ordered PostgreSQL migrations and authoritative game RPC |
+| `tests/` | Unit, SQL, and browser tests; local SQL adapter |
+| `diagnostics/cloudbase/` | Independent connection/timing diagnostic and shared HTTP helper |
+| `src/worker/`, `src/client/`, `src/shared/` | Earlier Cloudflare candidate and its session model |
 
-The preserved diagnostic page validates visitor login, two-seat HTTP synchronization, server timers, disconnect recovery and access boundaries. Deploy it separately when necessary:
+The root `index.html`, `public/`, `vite.config.ts`, `wrangler.jsonc`, and generated Worker types support the earlier candidate. Its commands use the `:legacy-cloudflare` suffix; `build:cloudbase` is the current build path.
 
-```sh
-tcb hosting deploy ./dist/cloudbase/site gomoku-diag --env-id YOUR_EXISTING_ENV_ID --verify
-```
+## License
 
-An older Cloudflare Workers and SQLite Durable Objects candidate remains under `src/worker/`, `src/shared/` and the legacy client. Its scripts have the `:legacy-cloudflare` suffix and are not the active deployment path.
-
-## Undo and reactions
-
-Each player may successfully undo twice per round. A request removes their most recent stone, plus the opponent's reply if already played. Both players see the exact impact and restored time before approval. Requests pause the game for up to 30 seconds; rejection, cancellation or expiry preserves the original remaining time and consumes no use. Approval restores the requester's saved pre-move budget, clamped to 15–60 seconds. Requests have a 30-second cooldown and cannot be repeated for the same move. Detected disconnects cancel negotiation and retain the disconnect pause.
-
-Eight fixed reactions are available beside player information. The server permits one per two seconds and at most ten per minute per player. Reactions arrive with polling, display for about 1.5 seconds, do not affect game timing, and are not replayed on reconnect. Invitations use links and room codes.
-
-There is no AI opponent, matchmaking, spectator mode, chat or payment integration.
-
-## Sound
-
-The header speaker toggles sound, enabled by default, and saves the preference locally. A user gesture unlocks Web Audio on mobile browsers. Confirmed moves use a 0.30-second recording of a Yunzi Go stone on a wooden board; successful undo uses a 0.78-second recorded mouth whoosh with a smooth downward pitch and fade. Victory/defeat keep their four rising/falling synthesized notes. The final impact finishes before the result melody starts. Preview clicks and unsuccessful undo requests stay silent. Snapshot baselines and move IDs prevent polling, refresh or reconnect from replaying old sounds. Hidden pages stop pending playback; unavailable audio never blocks play.
-
-Cat and dog recordings are local mono MP3 files, about 20 KB combined, loaded after interaction. Sources and CC0 licenses are recorded in [sounds/LICENSE.txt](game/public/sounds/LICENSE.txt). No audio library or external audio host is required at runtime. Local sound browser tests instrument real Web Audio nodes and use isolated SQL; they verify scheduling and triggering, not subjective listening quality or physical iPhone/Android behavior.
-
-Never commit secrets, cookies, local environment files or internal acceptance records. `docs/internal/`, `.cloudbase/` and `.env.local` stay ignored. Follow `AGENTS.md` for development and authorization boundaries.
+Project code is available under the [MIT License](LICENSE). Bundled recordings are CC0; their sources and modifications are listed in [sounds/LICENSE.txt](game/public/sounds/LICENSE.txt). The bundled Outfit font retains its [SIL Open Font License](game/public/fonts/OFL-Outfit.txt).

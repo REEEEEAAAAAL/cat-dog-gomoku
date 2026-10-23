@@ -80,7 +80,7 @@ async function pair(browser: Browser, mobile = false, bothDesktop = false, verif
       }
       expect(await b.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
-    await b.screenshot({ path: 'docs/internal/game-ready-mobile.png', fullPage: true });
+    await b.screenshot({ path: 'test-results/screenshots/game-ready-mobile.png', fullPage: true });
     await a.reload();
     await expect(a.locator('#ready')).toHaveText('准备好啦！等对方');
     await expect(a.locator('#ready')).toBeDisabled();
@@ -156,7 +156,7 @@ test('home supports narrow phones and desktop without overflow', async ({ page }
       expect(caption!.y - Math.max(...bounds.map(box => box!.y + box!.height))).toBeGreaterThanOrEqual(16);
     }
   }
-  await page.screenshot({path:'docs/internal/invitation-home-desktop.png',fullPage:true});
+  await page.screenshot({path:'test-results/screenshots/invitation-home-desktop.png',fullPage:true});
 });
 
 test('invitation follows presence while links and room codes preserve assigned identities', async ({ browser }) => {
@@ -209,7 +209,7 @@ test('invitation follows presence while links and room codes preserve assigned i
         expect(shift).toBeLessThan(2);
       }
     }
-    await a.screenshot({ path: `docs/internal/invitation-${showInvite ? 'offline' : 'online'}-desktop.png`, fullPage: true });
+    await a.screenshot({ path: `test-results/screenshots/invitation-${showInvite ? 'offline' : 'online'}-desktop.png`, fullPage: true });
   }
   async function disconnect() {
     await contexts[1].setOffline(true);
@@ -253,7 +253,7 @@ test('invitation follows presence while links and room codes preserve assigned i
     await expect(b.locator('#board .stone:not(.preview)')).toHaveCount(1);
     await expect(a.locator('#invitePanel')).toBeHidden();
     await a.setViewportSize({width:390,height:1000});
-    await a.screenshot({path:'docs/internal/invitation-online-mobile.png',fullPage:true});
+    await a.screenshot({path:'test-results/screenshots/invitation-online-mobile.png',fullPage:true});
     await a.locator('#leave').click(); await a.locator('#confirmLeave').click();
     await expect(a.locator('#gameStatus')).toHaveText('房间已关闭');
     await expect(a.locator('#invitePanel')).toBeHidden();
@@ -291,7 +291,7 @@ test('two players complete a real game, approve entry, recover a lost acknowledg
     await expect(a.locator('#gameStatus')).toContainText('获胜');
     await expect(b.locator('#gameStatus')).toContainText('获胜');
     for (const p of [a,b]) { await expect(p.locator('#resultPanel')).toBeVisible(); await expect(p.locator('#resultTitle')).toContainText('赢啦！'); }
-    await a.screenshot({ path: 'docs/internal/game-victory.png', fullPage: true });
+    await a.screenshot({ path: 'test-results/screenshots/game-victory.png', fullPage: true });
     await a.reload(); await expect(a.locator('#resultPanel')).toBeVisible();
     expect(await a.locator('#gameStatus').textContent()).toBe(await b.locator('#gameStatus').textContent());
     await expect(a.locator('#board .stone:not(.preview)')).toHaveCount(9);
@@ -330,9 +330,9 @@ test('two players complete a real game, approve entry, recover a lost acknowledg
       }
     }
     await a.setViewportSize({ width: 390, height: 844 });
-    await a.screenshot({ path: 'docs/internal/game-mobile.png', fullPage: true });
+    await a.screenshot({ path: 'test-results/screenshots/game-mobile.png', fullPage: true });
     await a.setViewportSize({ width: 1280, height: 900 });
-    await a.screenshot({ path: 'docs/internal/game-desktop.png', fullPage: true });
+    await a.screenshot({ path: 'test-results/screenshots/game-desktop.png', fullPage: true });
     const outsider = await browser.newContext(); const c = await outsider.newPage();
     try { await enter(c, `./${new URL(a.url()).hash}`); await expect(c.locator('#notice')).toContainText('已有两位'); }
     finally { await outsider.close(); }
@@ -415,9 +415,9 @@ test('mutual undo, exact impact, emoji delivery while paused and refreshed reque
       await expect(page.locator('#opponentPlayer')).toContainText('悔棋：剩余2次');
     }
     await a.setViewportSize({ width: 390, height: 844 });
-    await a.screenshot({ path: 'docs/internal/game-mobile.png', fullPage: true });
+    await a.screenshot({ path: 'test-results/screenshots/game-mobile.png', fullPage: true });
     await a.setViewportSize({ width: 1280, height: 900 });
-    await a.screenshot({ path: 'docs/internal/game-desktop.png', fullPage: true });
+    await a.screenshot({ path: 'test-results/screenshots/game-desktop.png', fullPage: true });
     const black = game.state().blackSeat === 1 ? a : b;
     const white = black === a ? b : a;
     await play(black, 7, 7, black === b);
@@ -450,7 +450,7 @@ test('mutual undo, exact impact, emoji delivery while paused and refreshed reque
     await expect(white.locator('#opponentPlayer')).toContainText('悔棋：剩余1次');
     await expect(black.locator('#gameStatus')).toContainText(/的回合|你的回合/);
     await expect(black.locator('#board button[data-x="6"][data-y="6"]')).toHaveAttribute('aria-disabled', 'false');
-    await black.screenshot({ path: 'docs/internal/game-interactions.png', fullPage: true });
+    await black.screenshot({ path: 'test-results/screenshots/game-interactions.png', fullPage: true });
     expect(game.errors).toEqual([]);
   } finally { await finish(contexts); }
 });
@@ -564,7 +564,7 @@ test('mouse previews and moves only once after confirmation and server acknowled
     await expect(p.locator('.turn-orbit')).toBeVisible();
     await p.emulateMedia({ reducedMotion: 'no-preference' });
     await cell.click(); await expect(p.locator('#board .preview')).toHaveCount(1);
-    await p.screenshot({ path: 'docs/internal/game-preview-orbit.png', fullPage: true });
+    await p.screenshot({ path: 'test-results/screenshots/game-preview-orbit.png', fullPage: true });
     const controls = await p.locator('#moveControls').boundingBox(), boardBox = await p.locator('.board-wrap').boundingBox();
     const bottomLine = boardBox!.y + boardBox!.height + 5;
     expect(Math.abs(controls!.y + controls!.height - bottomLine)).toBeLessThan(2);
@@ -619,7 +619,7 @@ test('mouse previews and moves only once after confirmation and server acknowled
       expect(Math.abs(undo!.x + undo!.width - controls!.x - controls!.width)).toBeLessThan(2);
       expect(reactions!.y).toBeGreaterThanOrEqual(undo!.y + undo!.height + 7);
       expect(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      if (width === 390) await p.screenshot({path:'docs/internal/ui-spacing-after-mobile.png',fullPage:true});
+      if (width === 390) await p.screenshot({path:'test-results/screenshots/ui-spacing-after-mobile.png',fullPage:true});
     }
     await p.setViewportSize({ width:1280, height:900 });
     const reactions = p.locator('#reactions');
@@ -630,7 +630,7 @@ test('mouse previews and moves only once after confirmation and server acknowled
     await expect(p.locator('#reactions button').last()).toBeInViewport();
     await p.locator('#previousReactions').click();
     await expect.poll(() => reactions.evaluate(node => node.scrollLeft)).toBe(0);
-    await p.screenshot({ path:'docs/internal/game-desktop-actions.png', fullPage:true });
+    await p.screenshot({ path:'test-results/screenshots/game-desktop-actions.png', fullPage:true });
     await p.locator('#leave').click();
     await expect(p.locator('#leaveDialog')).toBeVisible();
     await p.locator('#stay').click();
@@ -707,7 +707,7 @@ test('invited visitors see only the remaining dog role and a prominent join acti
       expect(join!.y+join!.height).toBeLessThanOrEqual(create!.y);
     }
     await b.setViewportSize({width:390,height:844});
-    await b.screenshot({path:'docs/internal/game-invitation-role.png',fullPage:true});
+    await b.screenshot({path:'test-results/screenshots/game-invitation-role.png',fullPage:true});
     await b.locator('#create').click();
     await expect(b.locator('#dog')).toBeVisible();await expect(b.locator('#cat')).toBeVisible();
     await expect(b.locator('#create')).toHaveText('创建房间');
@@ -716,7 +716,7 @@ test('invited visitors see only the remaining dog role and a prominent join acti
     await expect(b.locator('#pendingPanel h2')).toHaveText('等房主确认ing...');
     await expect(b.locator('#pendingPanel p')).toHaveText('加入申请已送达！确认后就能看到棋局。再稍微等一下下哦~');
     await expect(a.locator('#applicationPanel h2')).toHaveText('有人来啦！！');
-    await expect(a.locator('#applicantName')).toHaveText('狗狗想加入你的房间👀请确认是对方本人哦');
+    await expect(a.locator('#applicantName')).toHaveText('狗狗想加入你的房间👀请确认是对方本人哦！');
     await a.locator('#approve').click();
     await expect(b.locator('#selfPlayer')).toContainText('狗狗');
   } finally {await finish(contexts);}

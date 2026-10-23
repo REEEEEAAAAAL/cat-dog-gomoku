@@ -13,3 +13,8 @@ docs/internal/
 .dev.vars.*
 *.log
 .npm-cache/
+AGENTS.md
+.cloudbase-backup/
+*.tsbuildinfo
+.DS_Store
+Thumbs.db

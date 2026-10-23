@@ -129,7 +129,7 @@ test('sound identities, mute persistence, header geometry and optional audio fai
     await page.locator('#dog').click(); expect(await voices(page)).toEqual([]);
     await page.locator('#sound').click(); await page.locator('#dog').click(); await expect.poll(() => count(page, 'animal')).toBe(1);
     await page.reload(); expect(await voices(page)).toEqual([]);
-    await page.screenshot({ path: 'docs/internal/sound-home-desktop.png', fullPage: true });
+    await page.screenshot({ path: 'test-results/screenshots/sound-home-desktop.png', fullPage: true });
     expect(errors).toEqual([]);
   } finally { await context.close(); }
   for (const failure of ['unsupported', 'resume', 'fetch', 'decode'] as const) {
@@ -194,7 +194,7 @@ test('confirmed moves and undo sound once on both clients; refusal and restore s
     await expect(black.locator('#board .stone')).toHaveCount(4); expect(await count(black, 'move')).toBe(0);
     await play(black, 5, 7); await expect.poll(() => count(black, 'move')).toBe(1);
     await a.setViewportSize({ width: 390, height: 844 });
-    await a.screenshot({ path: 'docs/internal/sound-room-mobile.png', fullPage: true });
+    await a.screenshot({ path: 'test-results/screenshots/sound-room-mobile.png', fullPage: true });
     expect(game.errors).toEqual([]);
   } finally { await Promise.all(game.contexts.map(c => c.close())); }
 });
