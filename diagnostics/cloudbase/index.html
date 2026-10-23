@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>猫狗连接测试 · CloudBase 候选</title></head>
+<body><main>
+  <header><p class="eyebrow">CAT & DOG GOMOKU / 阶段 0 候选验证</p><h1>连接、计时与恢复测试</h1><p>本页用于验证 CloudBase 服务端状态、回合计时与断线处理，不是完整五子棋。</p></header>
+  <section><h2>1. 两台设备连接</h2><div class="actions"><button id="new">新建测试</button><button id="join">连接当前测试</button><button id="invite" disabled>复制邀请链接</button></div><p id="status" role="status" aria-live="polite">等待配置和连接</p><textarea id="copy" hidden readonly aria-label="长按复制"></textarea></section>
+  <section><h2>2. 互发与刷新</h2><p>等待状态可互发测试信号；开始计时后，当前行棋席模拟落子并把 60 秒回合交给对方。前台每 10 秒核对状态，页面隐藏时暂停查询。</p><div id="count" class="counter">0</div><button id="send" disabled>发送测试信号</button><p id="latency">尚无样本</p><button id="report">复制脱敏报告</button></section>
+  <section><h2>3. 服务端计时与断线</h2><dl><div><dt>对局状态</dt><dd id="phase">等待连接</dd></div><div><dt>当前行棋方</dt><dd id="turn">等待双方连接</dd></div><div><dt>连接状态</dt><dd id="presence">尚未连接</dd></div></dl><div id="timer" class="timer">60.0 秒</div><p id="gameStatus" role="status" aria-live="polite">两人连接后开始测试计时。</p><div class="actions"><button id="startTimer" disabled>开始 60 秒计时</button><button id="disconnect" disabled>模拟断线</button><button id="reconnect" hidden>重新连接</button></div><p>断线模拟会停止此设备轮询。服务器检测离线后暂停；双方在 5 分钟内恢复后继续剩余时间，超过时限则中止且不判负。</p></section>
+  <footer>只显示计数与测试状态；不显示用户标识或凭据。超时与断线结果由服务端数据库事务裁定。自动化成功不能代替大陆真机网络测试。</footer>
+</main><script type="module" src="/main.ts"></script></body></html>
