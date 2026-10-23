@@ -43,10 +43,19 @@ async function pair(browser: Browser, mobile = false, bothDesktop = false, verif
   await enter(a);
   await a.locator('#create').click();
   await expect(a.locator('#roomCode')).toHaveText(/^[A-F0-9]{10}$/);
+  await expect(a.locator('#invitePanel')).toBeVisible();
+  if (verifyReadiness) {
+    for (const width of [900, 1024, 1280]) {
+      await a.setViewportSize({width,height:1000});
+      const lobby = await a.locator('#lobbyPanel').boundingBox(), title = await a.locator('#invitePanel h2').boundingBox();
+      expect(title!.y - lobby!.y - lobby!.height).toBeGreaterThanOrEqual(21);
+      expect(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
+  }
   await enter(b, `./${new URL(a.url()).hash}`);
-  await expect(b.locator('#cat')).toBeVisible();
-  await expect(b.locator('#dog')).toBeHidden();
-  await expect(b.locator('#invitationRole')).toContainText('猫猫');
+  await expect(b.locator('#dog')).toBeVisible();
+  await expect(b.locator('#cat')).toBeHidden();
+  await expect(b.locator('#invitationRole')).toContainText('狗狗');
   const joinBox = await b.locator('#joinEntry').boundingBox(), createBox = await b.locator('#create').boundingBox();
   expect(joinBox!.y + joinBox!.height).toBeLessThanOrEqual(createBox!.y);
   await b.locator('#join').click();
@@ -115,7 +124,13 @@ async function finish(contexts: BrowserContext[]) { await Promise.all(contexts.m
 
 test('home supports narrow phones and desktop without overflow', async ({ page }) => {
   await enter(page);
-  for (const width of [320, 360, 390, 430, 1280]) {
+  const icon = page.locator('link[rel="icon"]');
+  await expect(icon).toHaveAttribute('href', './favicon.svg?v=1');
+  const favicon = await page.request.get(new URL((await icon.getAttribute('href'))!, page.url()).href);
+  expect(favicon.ok()).toBe(true);
+  expect(favicon.headers()['content-type']).toContain('image/svg+xml');
+  expect(await favicon.text()).toContain('viewBox="0 0 36 36"');
+  for (const width of [320, 360, 390, 430, 900, 1024, 1280]) {
     await page.setViewportSize({ width, height: 844 });
     const cat = await page.locator('#cat').boundingBox(), dog = await page.locator('#dog').boundingBox();
     expect(cat!.x).toBeLessThan(dog!.x);
@@ -128,7 +143,118 @@ test('home supports narrow phones and desktop without overflow', async ({ page }
       return { blackWidth:black.width, blackHeight:black.height, whiteWidth:white.width, whiteHeight:white.height, radius:white.borderRadius };
     });
     expect(mark).toEqual({ blackWidth:'20px', blackHeight:'20px', whiteWidth:'20px', whiteHeight:'20px', radius:'50%' });
+    if (width >= 900) {
+      const caption = await page.locator('.intro-caption').boundingBox();
+      const avatars = await page.locator('#introArt .avatar').all();
+      const bounds = await Promise.all(avatars.map(avatar => avatar.boundingBox()));
+      expect(caption!.y - Math.max(...bounds.map(box => box!.y + box!.height))).toBeGreaterThanOrEqual(16);
+    }
   }
+  await page.screenshot({path:'docs/internal/invitation-home-desktop.png',fullPage:true});
+});
+
+test('invitation follows presence while links and room codes preserve assigned identities', async ({ browser }) => {
+  test.skip(!process.env.GOMOKU_LOCAL_SQL && !process.env.GOMOKU_URL?.startsWith('http://127.0.0.1'));
+  const game = await pair(browser, false, true, true);
+  const { a, b, contexts } = game;
+  const outsider = await browser.newContext();
+  await outsider.route(/https:\/\/.*tcloudbase/, route => route.abort('blockedbyclient'));
+  const stranger = await outsider.newPage();
+  for (const page of [a,b,stranger]) page.setDefaultTimeout(15000);
+  const code = (await a.locator('#roomCode').textContent())!;
+  async function layout(showInvite: boolean) {
+    for (const width of [320, 390, 430, 900, 1024, 1280]) {
+      await a.setViewportSize({ width, height: 1000 });
+      await expect(a.locator(width >= 900 ? '#desktopActions > #moveControls' : '#boardArea > #moveControls')).toHaveCount(1);
+      await expect(a.locator('#invitePanel')).toBeVisible({ visible: showInvite });
+      expect(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      const rules = await a.locator('#rules').boundingBox();
+      const art = await a.locator('.room-companions').boundingBox();
+      const image = await a.locator('.room-companions img').boundingBox();
+      if (width <= 430) {
+        expect(art!.height).toBe(140);
+        expect(art!.y).toBeGreaterThanOrEqual(rules!.y + rules!.height);
+        if (showInvite) {
+          const invite = await a.locator('#invitePanel').boundingBox();
+          expect(invite!.y).toBeGreaterThanOrEqual(art!.y + art!.height);
+        }
+      } else {
+        const aside = await a.locator('#roomAside').boundingBox();
+        if (!showInvite) expect(Math.abs(rules!.y - aside!.y - 10)).toBeLessThan(2);
+        if (image) {
+          expect(Math.abs(image.y + image.height / 2 - art!.y - art!.height / 2)).toBeLessThan(2);
+          expect(image.y).toBeGreaterThanOrEqual(rules!.y + rules!.height);
+          const actions = await a.locator('#interactionControls').boundingBox();
+          expect(image.y + image.height).toBeLessThan(actions!.y);
+        }
+        const shift = await a.evaluate(() => {
+          const panel = document.getElementById('invitePanel')!;
+          const selectors = ['.board-wrap', '#opponentPlayer', '#selfPlayer', '#interactionControls', '#moveControls', '#leave'];
+          const measure = () => selectors.map(selector => {
+            const rect = document.querySelector(selector)!.getBoundingClientRect();
+            return [rect.x, rect.y, rect.width, rect.height];
+          });
+          const hidden = panel.hidden, before = measure();
+          panel.hidden = !hidden;
+          const after = measure();
+          panel.hidden = hidden;
+          return Math.max(...before.flatMap((rect, i) => rect.map((value, j) => Math.abs(value - after[i][j]))));
+        });
+        expect(shift).toBeLessThan(2);
+      }
+    }
+    await a.screenshot({ path: `docs/internal/invitation-${showInvite ? 'offline' : 'online'}-desktop.png`, fullPage: true });
+  }
+  async function disconnect() {
+    await contexts[1].setOffline(true);
+    await expect(a.locator('#gameStatus')).toHaveText('等你们重新连上', { timeout: 25000 });
+    await expect(a.locator('#invitePanel')).toBeVisible();
+    const clock = await a.locator('#clock').textContent();
+    await a.waitForResponse(response => response.url().endsWith('/rpc/gomoku_command'));
+    await expect(a.locator('#clock')).toHaveText(clock!);
+  }
+  try {
+    await expect(a.locator('#invitePanel')).toBeHidden();
+    await expect(b.locator('#invitePanel')).toBeHidden();
+    await play(game.state().blackSeat === 1 ? a : b, 7, 7);
+    await layout(false);
+    await disconnect();
+    await layout(true);
+    await enter(stranger, `./#${code}`);
+    await expect(stranger.locator('#notice')).toContainText('房间已有两位玩家');
+    await enter(stranger);
+    await stranger.locator('#roomInput').fill(code); await stranger.locator('#join').click();
+    await expect(stranger.locator('#notice')).toContainText('房间已有两位玩家');
+    await expect(a.locator('#applicationPanel')).toBeHidden();
+    await b.goto('about:blank');
+    await contexts[1].setOffline(false);
+    await enter(b, `./#${code}`);
+    await expect(b.locator('#entryPanel')).toHaveClass(/invited/);
+    await b.locator('#join').click();
+    await expect(b.locator('#selfPlayer')).toContainText('狗狗');
+    await expect(a.locator('#invitePanel')).toBeHidden();
+    await expect(a.locator('#gameStatus')).toContainText(/的回合|你的回合/);
+    await b.reload();
+    await expect(b.locator('#invitePanel')).toBeHidden();
+    await expect(b.locator('#board .stone:not(.preview)')).toHaveCount(1);
+    await disconnect();
+    await b.goto('about:blank');
+    await contexts[1].setOffline(false);
+    await enter(b);
+    await expect(b.locator('#resume')).toBeVisible();
+    await b.locator('#roomInput').fill(code); await b.locator('#join').click();
+    await expect(b.locator('#selfPlayer')).toContainText('狗狗');
+    await expect(b.locator('#board .stone:not(.preview)')).toHaveCount(1);
+    await expect(a.locator('#invitePanel')).toBeHidden();
+    await a.setViewportSize({width:390,height:1000});
+    await a.screenshot({path:'docs/internal/invitation-online-mobile.png',fullPage:true});
+    await a.locator('#leave').click(); await a.locator('#confirmLeave').click();
+    await expect(a.locator('#gameStatus')).toHaveText('房间已关闭');
+    await expect(a.locator('#invitePanel')).toBeHidden();
+    await b.reload();
+    await expect(b.locator('#invitePanel')).toBeHidden();
+    expect(game.errors).toEqual([]);
+  } finally { await outsider.close(); await finish(contexts); }
 });
 
 test('two players complete a real game, approve entry, recover a lost acknowledgement, rematch, refresh and reject outsiders', async ({ browser }) => {
@@ -138,9 +264,6 @@ test('two players complete a real game, approve entry, recover a lost acknowledg
   try {
     const black = game.state().blackSeat === 1 ? a : b;
     const white = black === a ? b : a;
-    await b.evaluate(() => { Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: () => Promise.reject(new Error('denied')) } }); });
-    await b.locator('#invite').click(); await expect(b.locator('#copyFallback')).toBeVisible();
-    expect(await b.locator('#copyFallback').inputValue()).toContain('#');
     let dropped = false;
     await black.route('**/rpc/gomoku_command', async route => {
       if (!dropped && route.request().postDataJSON()?.p_action === 'move') {
@@ -173,6 +296,7 @@ test('two players complete a real game, approve entry, recover a lost acknowledg
     await b.reload(); await expect(b.locator('#rematchPanel')).toBeVisible();
     await b.locator('#acceptRematch').click();
     await expect(a.locator('#round')).toHaveText('02'); await expect(b.locator('#round')).toHaveText('02');
+    await expect(a.locator('#invitePanel')).toBeHidden(); await expect(b.locator('#invitePanel')).toBeHidden();
     expect(game.state().blackSeat).toBe(3 - oldBlack);
     await expect(a.locator('#board .stone')).toHaveCount(0);
     const nextBlack = oldBlack === 1 ? b : a;
@@ -192,7 +316,12 @@ test('two players complete a real game, approve entry, recover a lost acknowledg
     for (const width of [320, 360, 390, 430, 1280]) {
       await a.setViewportSize({ width, height: 844 });
       expect(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      const box = await a.locator('#board').boundingBox(); expect(box!.width).toBeLessThanOrEqual(600);
+      const box = await a.locator('#board').boundingBox();
+      expect(box!.width).toBeLessThanOrEqual(width >= 900 ? 620 : 600);
+      if (width >= 900) {
+        const player = await a.locator('#selfPlayer').boundingBox();
+        expect(Math.abs(box!.x + box!.width - player!.x - player!.width)).toBeLessThan(2);
+      }
     }
     await a.setViewportSize({ width: 390, height: 844 });
     await a.screenshot({ path: 'docs/internal/game-mobile.png', fullPage: true });
@@ -380,8 +509,18 @@ test('public five-minute absence aborts without a winner and allows a mutual new
 
 test('clipboard success is explicit, restores labels and handles unavailable clipboard', async ({ browser }) => {
   test.skip(!process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL && !process.env.GOMOKU_LOCAL_SQL);
-  const {a,b,contexts} = await pair(browser);
+  const contexts = await Promise.all([browser.newContext(), browser.newContext()]);
+  for (const context of contexts) {
+    if (process.env.GOMOKU_LOCAL_SQL || process.env.GOMOKU_URL?.startsWith('http://127.0.0.1')) {
+      await context.route(/https:\/\/.*tcloudbase/, route => route.abort('blockedbyclient'));
+    }
+  }
+  const [a,b] = await Promise.all(contexts.map(context => context.newPage()));
   try {
+    for (const page of [a,b]) {
+      await enter(page); await page.locator('#create').click();
+      await expect(page.locator('#invitePanel')).toBeVisible();
+    }
     await a.evaluate(() => { Object.defineProperty(navigator, 'clipboard', { configurable:true, value:{ writeText: async (value: string) => { sessionStorage.setItem('copied-value',value); } } }); });
     await a.locator('#invite').click();
     await expect(a.locator('#invite')).toHaveText('复制成功！发送给对方让TA加入吧~');
@@ -444,7 +583,7 @@ test('mouse previews and moves only once after confirmation and server acknowled
       expect(leave!.x).toBeGreaterThan(self!.x + self!.width + 30);
       expect(leave!.y).toBeGreaterThan(hint!.y + hint!.height);
       expect(leave!.y - hint!.y - hint!.height).toBeGreaterThanOrEqual(17);
-      expect(Math.abs(leave!.y + leave!.height - self!.y - self!.height)).toBeLessThan(2);
+      expect(Math.abs(self!.y + self!.height - leave!.y - leave!.height - 8)).toBeLessThan(2);
       expect(Math.abs(leave!.x + leave!.width - hint!.x - hint!.width)).toBeLessThan(2);
       const undo = await p.locator('#undo').boundingBox(), picker = await p.locator('.reaction-picker').boundingBox();
       const rules = await p.locator('#rules').boundingBox();
@@ -452,16 +591,30 @@ test('mouse previews and moves only once after confirmation and server acknowled
       expect(picker!.x).toBeGreaterThan(undo!.x + undo!.width);
       expect(actions!.y - rules!.y - rules!.height).toBeGreaterThan(24);
       expect(confirm!.y - actions!.y - actions!.height).toBeGreaterThanOrEqual(23);
-      const invite = await p.locator('#invitePanel').boundingBox(), roomTag = await p.locator('.room-tag').boundingBox();
-      expect(Math.abs(invite!.y - roomTag!.y)).toBeLessThan(2);
+      expect(Math.abs(fixed!.y - actions!.y - actions!.height - 24)).toBeLessThan(2);
+      await expect(p.locator('#invitePanel')).toBeHidden();
+      expect(Math.abs(rules!.y - aside!.y - 10)).toBeLessThan(2);
       expect(cancel!.x).toBeGreaterThan(confirm!.x + confirm!.width);
       expect(hint!.x - cancel!.x - cancel!.width).toBeGreaterThanOrEqual(23);
       expect(Math.abs(hint!.x + hint!.width - aside!.x - aside!.width)).toBeLessThan(2);
     }
-    await p.setViewportSize({ width:390, height:844 });
-    await expect(p.locator('#mobileActions > #interactionControls')).toHaveCount(1);
-    await expect(p.locator('#roomAside > #leave')).toHaveCount(1);
-    expect(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    for (const width of [320, 360, 390, 430, 540, 760, 899]) {
+      await p.setViewportSize({ width, height:844 });
+      await expect(p.locator('#mobileActions > #interactionControls')).toHaveCount(1);
+      await expect(p.locator('#roomAside > #leave')).toHaveCount(1);
+      const undo = await p.locator('#undo').boundingBox(), controls = await p.locator('#interactionControls').boundingBox();
+      const reactions = await p.locator('#reactions').boundingBox();
+      const frame = await p.locator('.board-wrap').boundingBox(), confirm = await p.locator('#confirm').boundingBox();
+      const player = await p.locator('#selfPlayer').boundingBox();
+      const above = confirm!.y - frame!.y - frame!.height - 5;
+      const below = player!.y - confirm!.y - confirm!.height;
+      expect(Math.abs(above - below)).toBeLessThan(2);
+      expect(above).toBeGreaterThanOrEqual(15);
+      expect(Math.abs(undo!.x + undo!.width - controls!.x - controls!.width)).toBeLessThan(2);
+      expect(reactions!.y).toBeGreaterThanOrEqual(undo!.y + undo!.height + 7);
+      expect(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      if (width === 390) await p.screenshot({path:'docs/internal/ui-spacing-after-mobile.png',fullPage:true});
+    }
     await p.setViewportSize({ width:1280, height:900 });
     const reactions = p.locator('#reactions');
     await reactions.evaluate(node => { node.scrollLeft=0; });

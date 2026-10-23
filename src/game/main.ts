@@ -208,7 +208,7 @@ function render() {
   document.querySelector<HTMLElement>('.play-area')!.hidden = pending || !s;
   el('pendingPanel').hidden = !pending;
   el('lobbyPanel').hidden = !s || s.phase === 'running' || s.phase === 'paused';
-  el('invitePanel').hidden = !s || s.phase === 'closed';
+  el('invitePanel').hidden = !s || s.phase === 'closed' || (connected && s.players.every(p => p.name && p.online));
   el('applicationPanel').hidden = !s?.application;
   button('reconnect').hidden = !room || busy || s?.phase === 'closed' || (connected && !superseded);
   button('retry').hidden = !uncertain || busy;
