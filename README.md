@@ -100,4 +100,10 @@ Eight fixed reactions are available beside player information. The server permit
 
 There is no AI opponent, matchmaking, spectator mode, chat or payment integration.
 
+## Sound
+
+The header speaker toggles sound, enabled by default, and saves the preference locally. A user gesture unlocks Web Audio on mobile browsers. Confirmed moves use a short damped wood impact, successful undo uses filtered noise, and victory/defeat use four rising/falling notes. The final impact finishes before the result melody starts. Preview clicks and unsuccessful undo requests stay silent. Snapshot baselines and move IDs prevent polling, refresh or reconnect from replaying old sounds. Hidden pages stop pending playback; unavailable audio never blocks play.
+
+Cat and dog recordings are local mono MP3 files, about 20 KB combined, loaded after interaction. Sources and CC0 licenses are recorded in [sounds/LICENSE.txt](game/public/sounds/LICENSE.txt). No audio library or external audio host is required at runtime. Local sound browser tests instrument real Web Audio nodes and use isolated SQL; they verify scheduling and triggering, not subjective listening quality or physical iPhone/Android behavior.
+
 Never commit secrets, cookies, local environment files or internal acceptance records. `docs/internal/`, `.cloudbase/` and `.env.local` stay ignored. Follow `AGENTS.md` for development and authorization boundaries.

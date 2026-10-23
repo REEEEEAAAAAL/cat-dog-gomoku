@@ -1,0 +1,22 @@
+Animal recordings are dedicated to the public domain under CC0 1.0:
+https://creativecommons.org/publicdomain/zero/1.0/
+
+cat.mp3
+Title: cat meow short
+Creator: skymary
+Source: https://freesound.org/people/skymary/sounds/412017/
+Downloaded preview: https://cdn.freesound.org/previews/412/412017_3652520-hq.mp3
+Changes: silence trimmed, high-pass filter, peak limited, short fades,
+converted to mono 22.05 kHz MP3 at 48 kbps.
+
+dog.mp3
+Title: Dog Barking (tagged beagle by the recordist)
+Creator: Jace
+Source: https://freesound.org/people/Jace/sounds/155312/
+Downloaded preview: https://cdn.freesound.org/previews/155/155312_60285-hq.mp3
+Changes: first 2 seconds extracted,
+high-pass and low-pass filters, reduced volume, short fades,
+converted to mono 22.05 kHz MP3 at 48 kbps.
+
+Source licenses verified on 2026-10-23. No remote audio is loaded at runtime.
+Move, undo, victory and defeat effects are synthesized locally with Web Audio.

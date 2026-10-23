@@ -25,6 +25,8 @@
 
 .brand-mark{display:block;flex:0 0 36px;width:36px;height:36px}.brand-mark:before,.brand-mark span{content:"";position:absolute;width:20px;height:20px;border-radius:50%;border:1px solid #263b36}.brand-mark:before{left:0;top:4px;background:#263b36}.brand-mark span{left:14px;top:12px;background:var(--paper);text-shadow:none}
 
+.sound-toggle{display:grid;place-items:center;flex:0 0 44px;width:44px;min-height:44px;padding:10px;border-color:transparent;background:transparent;color:var(--green)}.sound-toggle svg{width:22px;height:22px}.sound-toggle .sound-muted{display:none}.sound-toggle[aria-pressed=false]{color:var(--muted)}.sound-toggle[aria-pressed=false] .sound-waves{display:none}.sound-toggle[aria-pressed=false] .sound-muted{display:block}
+@media(max-width:350px){.intro-art{right:-2px}}
 .room-companions{display:none;pointer-events:none;user-select:none}
 @media(min-width:900px){
   .shell:has(#home:not([hidden])){padding-inline:56px}

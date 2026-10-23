@@ -5,10 +5,27 @@ import { clockText, createId } from './rules';
 import type { Point } from './rules';
 import { errorMessage, reactions, RpcError } from './protocol';
 import type { Action, Command, Reaction, Reply, Snapshot, InvitationInfo } from './protocol';
+import { GameAudio } from './audio';
+import { SoundEvents } from './sound-events';
 
 const el = (id: string) => document.getElementById(id)!;
 const button = (id: string) => el(id) as HTMLButtonElement;
 const input = (id: string) => el(id) as HTMLInputElement;
+const audio = new GameAudio();
+const soundEvents = new SoundEvents();
+function renderSound() {
+  button('sound').setAttribute('aria-pressed', String(audio.enabled));
+  button('sound').setAttribute('aria-label', audio.enabled ? '关闭声音' : '开启声音');
+  button('sound').title = audio.enabled ? '关闭声音' : '开启声音';
+}
+button('sound').onclick = () => { audio.setEnabled(!audio.enabled); renderSound(); if (audio.enabled) audio.unlock(); };
+for (const event of ['pointerup', 'keydown', 'click'] as const) document.addEventListener(event, event => {
+  if (event.isTrusted) audio.unlock();
+}, { capture: true, passive: true });
+window.addEventListener('storage', event => {
+  if (event.key === 'gomoku.sound') { audio.setEnabled(event.newValue !== 'off'); renderSound(); }
+});
+renderSound();
 const compactLayout = window.matchMedia('(max-width:760px)');
 const desktopLayout = window.matchMedia('(min-width:900px)');
 function positionDesktopActions() {
@@ -74,6 +91,7 @@ function forgetRoom(target = room) {
 }
 
 function home() {
+  soundEvents.reset(); audio.stop();
   epoch++; room = ''; pending = false; snapshot = null; connected = false; superseded = false;
   selection = null; uncertain = null; applicationId = null; bubbles.clear(); seenReactions.clear();
   resultKey = ''; dismissedResult = ''; el('feedback').hidden = true;
@@ -260,11 +278,11 @@ function render() {
   if (nextResultKey !== resultKey) {
     resultKey = nextResultKey;
     el('resultAvatar').innerHTML = s.winner ? avatar(s.players[s.winner - 1].animal) : '';
-    el('resultTitle').textContent = `${winner}赢啦！`;
-    el('resultReason').textContent = s.reason === 'timeout' ? `${turnName}行棋超时` : '五子连线，这一局好精彩';
+    el('resultTitle').textContent = `${winner}赢啦！！`;
+    el('resultReason').textContent = s.reason === 'timeout' ? `${turnName}行棋超时` : '五子连线，这一局好精彩哇！';
   }
   el('resultPanel').hidden = !resultKey || dismissedResult === resultKey;
-  if (s.application) el('applicantName').textContent = `${s.application.name}想加入你的房间👀请确认是对方本人哦`;
+  if (s.application) el('applicantName').textContent = `${s.application.name}想加入你的房间👀请确认是对方本人哦！`;
   for (const id of ['approve', 'reject', 'leave']) button(id).disabled = busy || !connected || !!uncertain;
   button('confirm').disabled = !selection || !canMove();
   button('cancel').disabled = !selection || busy;
@@ -312,6 +330,7 @@ function apply(reply: Reply) {
       feedback('对方残忍拒绝了你的悔棋申请😭', true);
     }
   }
+  audio.play(soundEvents.observe(reply, wasConnected && !document.hidden && performance.now() - lastReceiptAt < 15000));
   snapshot = reply; pending = false; room = reply.room;
   serverAtReceipt = reply.serverNow; lastReceiptAt = performance.now();
   if (reply.phase === 'closed') forgetRoom(reply.room);
@@ -385,6 +404,7 @@ async function mutate(action: Action, data: Record<string, unknown> = {}, retry 
 }
 
 async function connect(action: 'create' | 'apply' | 'connect', target: string) {
+  soundEvents.reset(); audio.stop();
   epoch++; room = target; snapshot = null; pending = false; applicationId = null;
   connected = false; selection = null; uncertain = null;
   notice('正在连接你们的棋桌…');
@@ -471,6 +491,7 @@ el('cat').innerHTML = `${avatar('cat')}<span>猫猫</span>`;
 el('introArt').innerHTML = avatar('cat') + avatar('dog');
 for (const value of ['dog', 'cat'] as const) button(value).onclick = () => {
   if (invited && invitationInfo?.animal !== value) return;
+  void audio.animal(value);
   animal = value; input('nickname').placeholder = value === 'dog' ? '狗狗' : '猫猫';
   button('dog').setAttribute('aria-pressed', String(value === 'dog')); button('cat').setAttribute('aria-pressed', String(value === 'cat'));
 };
@@ -591,10 +612,11 @@ button('confirmLeave').onclick = () => {
     if (snapshot?.phase === 'closed') notice('房间已关闭。');
   });
 };
-window.addEventListener('offline', () => { connected = false; selection = null; notice('网络已断开，恢复后会自动同步', true); render(); });
+window.addEventListener('offline', () => { audio.stop(); connected = false; selection = null; notice('网络已断开，恢复后会自动同步', true); render(); });
 window.addEventListener('online', () => { void poll(); });
+window.addEventListener('pagehide', () => { audio.stop(); connected = false; });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { connected = false; selection = null; render(); }
+  if (document.hidden) { audio.stop(); connected = false; selection = null; render(); }
   else { lastActivityAt = performance.now(); void poll(); }
 });
 window.addEventListener('pageshow', () => { if (room && !document.hidden) void poll(); });
