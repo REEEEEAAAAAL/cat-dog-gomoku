@@ -1,4 +1,4 @@
-Animal recordings are dedicated to the public domain under CC0 1.0:
+The recordings below are dedicated to the public domain under CC0 1.0:
 https://creativecommons.org/publicdomain/zero/1.0/
 
 cat.mp3
@@ -19,4 +19,24 @@ high-pass and low-pass filters, reduced volume, short fades,
 converted to mono 22.05 kHz MP3 at 48 kbps.
 
 Source licenses verified on 2026-10-23. No remote audio is loaded at runtime.
-Move, undo, victory and defeat effects are synthesized locally with Web Audio.
+move.mp3
+Title: GoStoneSounds.ogg
+Creator: billhails2
+Source: https://freesound.org/people/billhails2/sounds/588317/
+Downloaded preview: https://cdn.freesound.org/previews/588/588317_12616419-hq.mp3
+Changes: fifth Yunzi stone on a shin-kaya wooden board, 6.195-6.495 seconds;
+high-pass filter, reduced volume, tiny onset fade and 60 ms tail fade,
+mono 22.05 kHz MP3 at 64 kbps. No added oscillator or reverberation.
+
+undo.mp3
+Title: Whoosh
+Creator: SimoSC
+Source: https://freesound.org/people/SimoSC/sounds/682473/
+Downloaded preview: https://cdn.freesound.org/previews/682/682473_5819584-hq.mp3
+Changes: continuous mouth-recorded whoosh at 0.125-0.595 seconds, time stretched,
+soft high/low-pass filters, smooth descending pitch resampling to 0.78 seconds,
+35 ms attack and gradual fade, peak normalized to 0.42,
+mono 22.05 kHz MP3 at 64 kbps. No generated white noise.
+
+Move and undo source licenses verified on 2026-10-23.
+Victory and defeat effects are synthesized locally with Web Audio.

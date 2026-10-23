@@ -1,6 +1,7 @@
 import type { GameSound } from './sound-events';
 
 type Animal = 'cat' | 'dog';
+type Sample = Animal | 'move' | 'undo';
 type Source = AudioBufferSourceNode | OscillatorNode;
 const storageKey = 'gomoku.sound';
 const melodies = { win: [523.25, 659.25, 783.99, 1046.5], lose: [659.25, 587.33, 523.25, 392] };
@@ -10,7 +11,8 @@ export class GameAudio {
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
   private sources = new Set<Source>();
-  private buffers = new Map<Animal, Promise<AudioBuffer>>();
+  private buffers = new Map<Sample, Promise<AudioBuffer>>();
+  private decoded = new Map<Sample, AudioBuffer>();
   private generation = 0;
   private tail = 0;
   private warned = false;
@@ -43,6 +45,7 @@ export class GameAudio {
         this.master.gain.value = .55;
         this.master.connect(this.context.destination);
         this.buffers.clear();
+        this.decoded.clear();
       }
       const context = this.context;
       // Resume is called directly in the user gesture, including Safari touch release.
@@ -52,6 +55,8 @@ export class GameAudio {
       silent.connect(this.master!); this.track(silent, []); silent.start();
       void this.load('cat').catch(error => this.unavailable(error));
       void this.load('dog').catch(error => this.unavailable(error));
+      void this.load('move').catch(error => this.unavailable(error));
+      void this.load('undo').catch(error => this.unavailable(error));
     } catch (error) { this.unavailable(error); }
   }
 
@@ -71,13 +76,14 @@ export class GameAudio {
     };
   }
 
-  private async load(animal: Animal): Promise<AudioBuffer> {
+  private async load(animal: Sample): Promise<AudioBuffer> {
     let buffer = this.buffers.get(animal);
     if (!buffer) {
       const context = this.context!;
       buffer = fetch(`${import.meta.env.BASE_URL}sounds/${animal}.mp3`)
         .then(response => { if (!response.ok) throw new Error('Sound download failed'); return response.arrayBuffer(); })
-        .then(bytes => context.decodeAudioData(bytes));
+        .then(bytes => context.decodeAudioData(bytes))
+        .then(decoded => { this.decoded.set(animal, decoded); return decoded; });
       this.buffers.set(animal, buffer);
       void buffer.catch(() => { this.buffers.delete(animal); });
     }
@@ -100,19 +106,27 @@ export class GameAudio {
 
   play(sounds: readonly GameSound[]) {
     if (!sounds.length || !this.enabled || document.hidden || this.context?.state !== 'running') return;
+    const missing = sounds.filter((sound): sound is 'move' | 'undo' => (sound === 'move' || sound === 'undo') && !this.decoded.has(sound));
+    if (missing.length) {
+      const generation = this.generation, requested = performance.now();
+      void Promise.all(missing.map(sound => this.load(sound))).then(() => {
+        if (generation === this.generation && performance.now() - requested <= 1500) this.play(sounds);
+      }).catch(error => {
+        this.unavailable(error);
+        if (generation === this.generation && performance.now() - requested <= 1500) {
+          this.play(sounds.filter(sound => sound === 'win' || sound === 'lose'));
+        }
+      });
+      return;
+    }
     try {
       const context = this.context;
       let at = Math.max(context.currentTime + .012, this.tail);
       for (const sound of sounds) {
         if (sound === 'move') {
-          // Damped wood resonances and a filtered impact avoid a sharp electronic beep.
-          this.tone(510, at, .085, .22, 'sine', 340);
-          this.tone(870, at, .045, .085, 'sine', 680);
-          this.noise(at, .036, .24, 1800, 1100, 'lowpass');
-          at += .14;
+          at += this.sample('move', at) + .025;
         } else if (sound === 'undo') {
-          this.noise(at, .23, .28, 3100, 420, 'bandpass');
-          at += .27;
+          at += this.sample('undo', at) + .025;
         } else {
           melodies[sound].forEach((frequency, index) => {
             const duration = index === 3 ? .33 : .13;
@@ -144,13 +158,10 @@ export class GameAudio {
     source.start(at); source.stop(at + duration + .01);
   }
 
-  private noise(at: number, duration: number, volume: number, from: number, to: number, type: BiquadFilterType) {
-    const context = this.context!, buffer = context.createBuffer(1, Math.ceil(context.sampleRate * duration), context.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-    const source = context.createBufferSource(), filter = context.createBiquadFilter(), gain = this.envelope(at, duration, volume);
-    source.buffer = buffer; filter.type = type; filter.Q.value = .7;
-    filter.frequency.setValueAtTime(from, at); filter.frequency.exponentialRampToValueAtTime(to, at + duration);
-    source.connect(filter); filter.connect(gain); this.track(source, [filter, gain]); source.start(at);
+  private sample(sound: 'move' | 'undo', at: number) {
+    const source = this.context!.createBufferSource(), buffer = this.decoded.get(sound)!;
+    source.buffer = buffer; source.connect(this.master!);
+    this.track(source, []); source.start(at);
+    return buffer.duration;
   }
 }

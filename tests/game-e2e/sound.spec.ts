@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Browser, BrowserContext, Page } from '@playwright/test';
 import type { Snapshot } from '../../src/game/protocol';
+import type { GameAudio } from '../../src/game/audio';
 
 interface Voice { kind: string; frequency: number; at: number; duration: number; stopped: boolean }
 interface Probe { voices: Voice[]; contexts: AudioContext[] }
@@ -45,8 +46,9 @@ async function setup(context: BrowserContext) {
 }
 async function voices(page: Page) { return page.evaluate(() => window.soundProbe.voices); }
 async function count(page: Page, kind: 'move' | 'undo' | 'result' | 'animal') {
-  return (await voices(page)).filter(v => kind === 'move' ? v.frequency === 510 : kind === 'undo' ? v.kind === 'buffer' && Math.abs(v.duration - .23) < .001
-    : kind === 'result' ? v.kind === 'triangle' : v.kind === 'buffer' && v.duration > .3).length;
+  return (await voices(page)).filter(v => kind === 'move' ? v.kind === 'buffer' && v.duration >= .2 && v.duration <= .35
+    : kind === 'undo' ? v.kind === 'buffer' && v.duration >= .6 && v.duration <= .9
+    : kind === 'result' ? v.kind === 'triangle' : v.kind === 'buffer' && v.duration > .9).length;
 }
 async function clear(page: Page) { await page.evaluate(() => { window.soundProbe.voices = []; }); }
 async function poll(page: Page) {
@@ -87,6 +89,24 @@ async function play(page: Page, x: number, y: number) {
   return snapshot;
 }
 test.beforeEach(() => { test.skip(!process.env.GOMOKU_LOCAL_SQL, 'Sound flows use isolated local PostgreSQL only'); });
+
+test('missing move recording does not suppress the result melody', async ({ context, page }) => {
+  await setup(context);
+  await page.route('**/sounds/move.mp3', route => route.fulfill({ status: 404 }));
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('./');
+  await page.evaluate(async () => {
+    const main = document.querySelector<HTMLScriptElement>('script[type="module"][src*="main.ts"]')!;
+    const { GameAudio: Audio } = await import(new URL('./audio.ts', main.src).href) as { GameAudio: typeof GameAudio };
+    const audio = new Audio();
+    document.querySelector<HTMLButtonElement>('#cat')!.onclick = () => { audio.unlock(); audio.play(['move', 'win']); };
+  });
+  await page.locator('#cat').click();
+  await expect.poll(() => count(page, 'result')).toBe(4);
+  expect(await count(page, 'move')).toBe(0);
+  expect(errors).toEqual([]);
+});
 
 test('sound identities, mute persistence, header geometry and optional audio failures', async ({ browser }) => {
   const context = await browser.newContext(); await setup(context);
@@ -190,7 +210,7 @@ test('last confirmed move precedes four ascending or descending notes; finished 
       expect(await count(page, 'move')).toBe(1);
       const notes = (await voices(page)).filter(v => v.kind === 'triangle');
       expect(notes.map(n => n.frequency)).toEqual(page === black ? [523.25, 659.25, 783.99, 1046.5] : [659.25, 587.33, 523.25, 392]);
-      const impact = (await voices(page)).find(v => v.frequency === 510)!;
+      const impact = (await voices(page)).find(v => v.kind === 'buffer' && v.duration >= .2 && v.duration <= .35)!;
       expect(notes[0].at).toBeGreaterThan(impact.at + impact.duration);
       expect(notes[3].duration).toBeGreaterThan(notes[0].duration);
       await poll(page); expect(await count(page, 'result')).toBe(4);
