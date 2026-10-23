@@ -1,10 +1,10 @@
-# Cat & Dog Gomoku
+<h1 align="center">🐱 Cat &amp; Dog Gomoku 🐶</h1>
 
-English | [简体中文](README.zh-CN.md)
+<p align="center">English | <a href="README.zh-CN.md">简体中文</a></p>
+
+<p align="center"><a href="https://cat-and-dog-gomoku-d4c9e5cfbbfc0-1513741929.tcloudbaseapp.com/gomoku/">Play online</a> | <a href="#screenshots">Screenshots</a> | <a href="https://github.com/REEEEEAAAAAL/cat-dog-gomoku">Source code</a></p>
 
 A small online Gomoku game for two people. Pick a cat or dog, send an invitation, and play together on a 15×15 board. Built for phones and desktops, with no account registration and a Simplified Chinese interface.
-
-[Play online](https://cat-and-dog-gomoku-d4c9e5cfbbfc0-1513741929.tcloudbaseapp.com/gomoku/)
 
 The hosted game uses a CloudBase trial environment with limited validity and quotas. Its default domain may show a confirmation page before opening the game.
 
@@ -17,14 +17,6 @@ The hosted game uses a CloudBase trial environment with limited validity and quo
 - Rematches with swapped colors, eight fixed reactions, and local sound effects with a persistent mute setting.
 
 There is no matchmaking, spectator mode, free-text chat, or computer opponent. An invitation grants permission to apply, not ownership of a player's seat. Returning players use the same browser session; another browser cannot take over their identity. Leaving closes the room for both players, and rooms expire after 24 hours.
-
-## Screenshots
-
-Current UI captured in a local two-browser game using the real SQL migrations. The phone image uses a simulated viewport.
-
-![Desktop game](docs/screenshots/desktop.png)
-
-<img src="docs/screenshots/mobile.png" alt="Game at a 390-pixel phone viewport" width="390" />
 
 ## Design
 
@@ -114,6 +106,14 @@ Invitations use URL fragments and need no custom server routing. Save the previo
 | `src/worker/`, `src/client/`, `src/shared/` | Earlier Cloudflare candidate and its session model |
 
 The root `index.html`, `public/`, `vite.config.ts`, `wrangler.jsonc`, and generated Worker types support the earlier candidate. Its commands use the `:legacy-cloudflare` suffix; `build:cloudbase` is the current build path.
+
+## Screenshots
+
+Current UI captured in a local two-browser game using the real SQL migrations. The phone image uses a simulated viewport.
+
+<img src="docs/screenshots/desktop.png" alt="Desktop game" width="700" />
+
+<img src="docs/screenshots/mobile.png" alt="Game at a 390-pixel phone viewport" width="260" />
 
 ## License
 

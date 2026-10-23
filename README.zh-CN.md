@@ -1,10 +1,10 @@
-# Cat & Dog Gomoku
+<h1 align="center">🐱 Cat &amp; Dog Gomoku 🐶</h1>
 
-[English](README.md) | 简体中文
+<p align="center"><a href="README.md">English</a> | 简体中文</p>
+
+<p align="center"><a href="https://cat-and-dog-gomoku-d4c9e5cfbbfc0-1513741929.tcloudbaseapp.com/gomoku/">在线游玩</a> | <a href="#截图">截图</a> | <a href="https://github.com/REEEEEAAAAAL/cat-dog-gomoku">源代码</a></p>
 
 一个为两个人设计的在线五子棋小游戏。选择猫猫或狗狗，分享邀请，在 15×15 棋盘上一起下一局。支持手机与电脑，无需注册账号，游戏界面为简体中文。
-
-[在线游玩](https://cat-and-dog-gomoku-d4c9e5cfbbfc0-1513741929.tcloudbaseapp.com/gomoku/)
 
 线上游戏使用有有效期与额度限制的 CloudBase 体验环境，默认域名首次访问可能显示确认页面。
 
@@ -17,14 +17,6 @@
 - 双方同意后换色再来一局，另有八种固定表情、本地音效和可记住设置的静音开关。
 
 不提供匹配、观战、自由文字聊天或人机对战。邀请用于申请加入，不是玩家身份凭证。恢复对局需要原浏览器会话，其他浏览器不能接管身份。主动离开会为双方关闭房间，房间在 24 小时后过期。
-
-## 截图
-
-使用当前界面和真实 SQL 迁移，在本地双浏览器对局中截取。手机图使用模拟视口。
-
-![电脑端对局](docs/screenshots/desktop.png)
-
-<img src="docs/screenshots/mobile.png" alt="390 像素手机视口下的对局" width="390" />
 
 ## 核心设计
 
@@ -114,6 +106,14 @@ tcb hosting deploy ./dist/cloudbase/game gomoku --env-id YOUR_ENV_ID --verify
 | `src/worker/`、`src/client/`、`src/shared/` | 早期 Cloudflare 候选实现及其会话模型 |
 
 根目录的 `index.html`、`public/`、`vite.config.ts`、`wrangler.jsonc` 和生成的 Worker 类型用于旧候选实现，对应命令带 `:legacy-cloudflare` 后缀。当前构建入口是 `build:cloudbase`。
+
+## 截图
+
+使用当前界面和真实 SQL 迁移，在本地双浏览器对局中截取。手机图使用模拟视口。
+
+<img src="docs/screenshots/desktop.png" alt="电脑端对局" width="700" />
+
+<img src="docs/screenshots/mobile.png" alt="390 像素手机视口下的对局" width="260" />
 
 ## 许可
 
