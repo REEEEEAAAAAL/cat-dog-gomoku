@@ -34,7 +34,7 @@
             <div class="board-area" id="boardArea"><div class="board-wrap"><div id="board" class="board" role="grid" aria-label="15 乘 15 五子棋棋盘"></div><svg id="boardLines" viewBox="0 0 15 15" aria-hidden="true"></svg><svg id="winOverlay" viewBox="0 0 15 15" aria-hidden="true"></svg><div id="resultPanel" class="result-panel" role="status" hidden><div id="resultAvatar"></div><h2 id="resultTitle"></h2><p id="resultReason"></p><button id="dismissResult">收起，看看棋盘</button></div></div>
             <div id="moveControls" class="move-controls"><span id="selectionHint">点选交叉点，再确认落子</span><div><button id="cancel" class="text-button" disabled>取消</button><button id="confirm" class="primary" disabled>确认落子</button></div></div></div>
             <div id="selfRow" class="self-row"><div id="selfPlayer" class="players self-player"></div></div>
-            <div id="mobileActions"><div id="interactionControls" class="interaction-controls"><button id="undo" disabled>申请悔棋</button><div class="reaction-picker"><button id="previousReactions" class="reaction-arrow" type="button" aria-label="向左查看表情">‹</button><div id="reactions" class="reactions" role="group" aria-label="发送表情"></div><button id="nextReactions" class="reaction-arrow" type="button" aria-label="向右查看表情">›</button></div></div></div>
+            <div id="mobileActions"><div id="interactionControls" class="interaction-controls"><div class="round-actions"><button id="resign" class="resign" disabled>认输</button><button id="undo" disabled>申请悔棋</button></div><div class="reaction-picker"><button id="previousReactions" class="reaction-arrow" type="button" aria-label="向左查看表情">‹</button><div id="reactions" class="reactions" role="group" aria-label="发送表情"></div><button id="nextReactions" class="reaction-arrow" type="button" aria-label="向右查看表情">›</button></div></div></div>
           </div>
           <aside id="roomAside" class="room-aside">
             <div id="pendingPanel" class="aside-block" hidden><h2>等房主确认ing...</h2><p>加入申请已送达！确认后就能看到棋局。再稍微等一下下哦~</p><button id="cancelApplication" class="text-button">撤回申请</button></div>
@@ -53,6 +53,7 @@
     <div id="feedback" class="feedback" role="status" aria-live="polite" hidden><span id="feedbackText"></span><button id="dismissFeedback" aria-label="关闭提示">知道啦</button></div>
     <dialog id="leaveDialog"><h2>要结束这个房间吗？</h2><p>双方都将无法继续本房间，进行中的对局会中止，不计输赢。</p><div class="button-row"><button id="stay">继续下棋</button><button id="confirmLeave" class="primary">关闭房间</button></div></dialog>
     <dialog id="undoDialog"><h2>申请悔棋</h2><p id="undoPreview"></p><p>需要对方同意。申请后暂时停止落子和计时，最多等待 30 秒。</p><div class="button-row"><button id="dismissUndo">继续下棋</button><button id="requestUndo" class="primary">发送申请</button></div></dialog>
+    <dialog id="resignDialog" aria-labelledby="resignTitle" aria-describedby="resignPrompt"><h2 id="resignTitle">要认输吗？</h2><p id="resignPrompt">真的要认输嘛？<br>这局胜利就送给对方了喔🥺</p><div class="button-row"><button id="dismissResign" autofocus>取消</button><button id="confirmResign" class="resign">确认认输😭</button></div></dialog>
     <script type="module" src="/../src/game/main.ts"></script>
   </body>
 </html>
