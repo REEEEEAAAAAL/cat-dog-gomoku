@@ -10,7 +10,7 @@ The hosted game uses a CloudBase trial environment with limited validity and quo
 
 ## Features
 
-- Private rooms with invitation links or ten-character codes, host approval, and readiness from both players.
+- Multiple private rooms can host games at the same time, each limited to two players, with independent game states that do not affect one another. Join via invitation links or ten-character room codes; play starts after host approval and both players are ready.
 - Five or more stones in a row wins. Preview a position, then confirm the move to avoid accidental placement; mouse, touch, and keyboard are supported.
 - Server-managed 60-second turns, disconnect pauses, and recovery after refresh. A five-minute unresolved disconnect ends the round without a winner.
 - Negotiated undo, up to two successful uses per player per round; both players review the affected stones before approval.
