@@ -1071,12 +1071,22 @@ test('replay numbers fit dense end snapshots on phones and desktops', async ({ b
       await page.setViewportSize({ width, height: 1000 });
       const metrics = await page.locator('.stone-number').evaluateAll(nodes => nodes.map(node => {
         const number = node.getBoundingClientRect(), stone = node.parentElement!.getBoundingClientRect();
-        return { text: node.textContent, width: number.width / stone.width, height: number.height / stone.height,
+        return { text: node.textContent, white: node.parentElement!.classList.contains('white'),
+          fontSize: parseFloat(getComputedStyle(node).fontSize), diameter: stone.width,
+          width: number.width / stone.width, height: number.height / stone.height,
           dx: Math.abs(number.x + number.width / 2 - stone.x - stone.width / 2),
           dy: Math.abs(number.y + number.height / 2 - stone.y - stone.height / 2) };
       }));
       expect(metrics.map(number => number.text)).toEqual(Array.from({ length: 225 }, (_, i) => String(i + 1)));
       expect(metrics.every(number => number.width < .93 && number.height < .65 && number.dx < .6 && number.dy < .6)).toBe(true);
+      for (const digits of [1, 2, 3]) {
+        const group = metrics.filter(number => number.text!.length === digits);
+        const white = group.filter(number => number.white).map(number => number.fontSize);
+        const black = group.filter(number => !number.white).map(number => number.fontSize);
+        expect(Math.abs(Math.max(...white) - Math.max(...black))).toBeLessThan(.05);
+        expect(Math.abs(Math.min(...white) - Math.min(...black))).toBeLessThan(.05);
+        expect(group.every(number => Math.abs(number.fontSize / number.diameter - [0, .62, .56, .48][digits]) < .002)).toBe(true);
+      }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const icons = await page.locator('.replay-buttons svg').evaluateAll(nodes => nodes.map(node => {
         const svg = node.getBoundingClientRect(), button = node.parentElement!.getBoundingClientRect();

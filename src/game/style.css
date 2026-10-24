@@ -68,3 +68,5 @@ button.resign:hover:not(:disabled){background:#f5e7e1;border-color:#cda69c}
 @media(min-width:900px){.replay-details{margin-top:10px}.replay-area{min-height:118px}}
 
 .replaying .stone{display:grid;place-items:center;container-type:inline-size}.stone-number{font:600 62cqi/1 "Outfit Timer",var(--font-numeric);font-variant-numeric:lining-nums tabular-nums;color:#fffdf7;white-space:nowrap;pointer-events:none}.stone-number[data-digits="2"]{font-size:56cqi}.stone-number[data-digits="3"]{font-size:48cqi}.stone.white .stone-number{color:#263b36}.stone.replay-current{outline:2px solid #bd7038;outline-offset:-1px}.board-wrap:has(.replaying) #winOverlay{z-index:1}.replay-area #toggleReplayNumbers{font-size:11px;color:var(--muted);padding-inline:6px}
+
+.replaying .stone.white{border:0;box-shadow:inset 0 0 0 1px #6e7265,1px 2px 3px #3b302c38}
