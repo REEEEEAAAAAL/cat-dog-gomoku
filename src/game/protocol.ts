@@ -9,7 +9,7 @@ export function isInvitationInfo(value: unknown): value is InvitationInfo {
     && 'room' in value && typeof value.room === 'string' && 'code' in value && typeof value.code === 'string'
     && 'animal' in value && (value.animal === 'cat' || value.animal === 'dog');
 }
-export const reactions = { plead: '🥺', cat: '😼', dog: '🐶', heart: '❤️', laugh: '😂', cry: '😭', angry: '😤', celebrate: '🎉' } as const;
+export const reactions = { cat: '😼', dog: '🐶', heart: '❤️', plead: '🥺', cry: '😭', angry: '😤', laugh: '😂', celebrate: '🎉' } as const;
 export type Reaction = keyof typeof reactions;
 export interface ReactionEvent { id: string; seat: Seat; emoji: Reaction; at: number }
 export interface UndoRequest { id: string; seat: Seat; target: string; removeCount: 1 | 2; restoreMs: number; expiresAt: number }

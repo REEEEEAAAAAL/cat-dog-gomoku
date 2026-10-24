@@ -15,6 +15,7 @@ The hosted game uses a CloudBase trial environment with limited validity and quo
 - Server-managed 60-second turns, disconnect pauses, and recovery after refresh. A five-minute unresolved disconnect ends the round without a winner.
 - Negotiated undo, up to two successful uses per player per round; both players review the affected stones before approval.
 - Resignation at any time after a round starts, with confirmation and a server-persisted result; no opponent approval is needed.
+- Review the finished round on the same board with a progress slider and four controls: start, previous, next, and end. Toggle move numbers and follow the highlighted current move with player and color labels. Replay is local and independent for each player; undone moves are excluded and past rounds are not permanently archived.
 - Rematches with swapped colors, eight fixed reactions, and local sound effects with a persistent mute setting.
 
 There is no matchmaking, spectator mode, free-text chat, or computer opponent. An invitation grants permission to apply, not ownership of a player's seat. Returning players use the same browser session; another browser cannot take over their identity. Leaving closes the room for both players, and rooms expire after 24 hours.
@@ -110,11 +111,15 @@ The root `index.html`, `public/`, `vite.config.ts`, `wrangler.jsonc`, and genera
 
 ## Screenshots
 
-Current UI captured in a local two-browser game using the real SQL migrations. The phone image uses a simulated viewport.
+Real game screens captured in local two-browser games using the SQL migrations. The phone image uses a simulated viewport.
 
 <img src="docs/screenshots/desktop-surrender.png" alt="Desktop game" width="700" />
 
 <img src="docs/screenshots/mobile-surrender.png" alt="Game at a 390-pixel phone viewport" width="260" />
+
+Post-game replay at move 24 of a 26-move round, showing move numbers, the current-move highlight, the progress slider, and all four navigation controls.
+
+<img src="docs/screenshots/desktop-replay.jpg" alt="Desktop replay at move 24 of 26 with numbered stones and navigation controls" width="700" />
 
 ## License
 
