@@ -194,6 +194,7 @@ function renderBoard() {
   const moves = replayStep === null ? s?.moves : s?.moves.slice(0, replayStep);
   const replaying = replayStep !== null;
   el('board').classList.toggle('replaying', replaying);
+  el('board').classList.toggle('black-preview', s?.seat === s?.blackSeat);
   const map = new Map(moves?.map((m, i) => [`${m.x},${m.y}`, { ...m, number: i + 1, last: i === moves.length - 1 }]));
   for (let i = 0; i < cells.length; i++) {
     const x = i % 15, y = Math.floor(i / 15), cell = cells[i];
