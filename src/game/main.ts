@@ -75,6 +75,7 @@ let undoProposal: Pick<Snapshot, 'version' | 'gameId'> | null = null;
 let resignGame: string | null = null;
 let resultKey = '';
 let dismissedResult = '';
+let replayStep: number | null = null;
 let feedbackTimer = 0;
 let lastActivityAt = performance.now();
 let idlePaused = false;
@@ -95,7 +96,7 @@ function home() {
   soundEvents.reset(); audio.stop();
   epoch++; room = ''; pending = false; snapshot = null; connected = false; superseded = false;
   selection = null; uncertain = null; applicationId = null; bubbles.clear(); seenReactions.clear();
-  resultKey = ''; dismissedResult = ''; el('feedback').hidden = true;
+  resultKey = ''; dismissedResult = ''; replayStep = null; el('feedback').hidden = true;
   idlePaused = false;
   document.querySelectorAll<HTMLDialogElement>('dialog').forEach(dialog => dialog.close());
   history.replaceState(null, '', location.pathname); el('copyFallback').hidden = true;
@@ -131,7 +132,7 @@ function canResign() {
 }
 
 function canMove() {
-  return !!snapshot && snapshot.phase === 'running' && snapshot.turnSeat === snapshot.seat
+  return replayStep === null && !!snapshot && snapshot.phase === 'running' && snapshot.turnSeat === snapshot.seat
     && snapshot.players.every(p => p.online && p.synced) && connected && !busy && !uncertain
     && !document.hidden && performance.now() - lastReceiptAt < 15000
     && snapshot.turnDeadline !== null && snapshot.turnDeadline > serverAtReceipt + performance.now() - lastReceiptAt;
@@ -189,7 +190,8 @@ function playerElements(s: Snapshot) {
 
 function renderBoard() {
   const s = snapshot;
-  const map = new Map(s?.moves.map((m, i) => [`${m.x},${m.y}`, { ...m, last: i === s.moves.length - 1 }]));
+  const moves = replayStep === null ? s?.moves : s?.moves.slice(0, replayStep);
+  const map = new Map(moves?.map((m, i) => [`${m.x},${m.y}`, { ...m, last: i === moves.length - 1 }]));
   for (let i = 0; i < cells.length; i++) {
     const x = i % 15, y = Math.floor(i / 15), cell = cells[i];
     const move = map.get(`${x},${y}`);
@@ -199,12 +201,38 @@ function renderBoard() {
     cell.setAttribute('aria-label', `${String.fromCharCode(65 + x)}${y + 1}${move ? color === 1 ? ' 黑棋' : ' 白棋' : ' 空位'}${preview ? ' 已选' : ''}`);
     cell.setAttribute('aria-disabled', String(!!move || !canMove()));
   }
-  const line = s?.winLine;
+  const line = replayStep === null || replayStep === s?.moves.length ? s?.winLine : null;
   if (line?.length) {
     const sorted = [...line].sort((a, b) => a.x - b.x || a.y - b.y);
     const first = sorted[0], last = sorted[sorted.length - 1];
     el('winOverlay').innerHTML = `<line x1="${first.x + .5}" y1="${first.y + .5}" x2="${last.x + .5}" y2="${last.y + .5}" stroke="#b46f40" stroke-width=".12" stroke-linecap="round"/>`;
   } else el('winOverlay').replaceChildren();
+}
+
+function renderReplay() {
+  const s = snapshot;
+  el('replayArea').hidden = s?.phase !== 'finished';
+  const active = replayStep !== null;
+  button('reviewGame').hidden = active;
+  el('replayTimeline').hidden = !active;
+  el('replayDetails').style.visibility = active ? 'visible' : 'hidden';
+  if (!s || replayStep === null) return;
+  const total = s.moves.length;
+  input('replayProgress').max = String(total);
+  input('replayProgress').value = String(replayStep);
+  input('replayProgress').disabled = total === 0;
+  el('replayCount').textContent = `第 ${replayStep} / ${total} 手`;
+  const move = s.moves[replayStep - 1];
+  el('replayMove').textContent = move ? `${s.players[move.seat - 1].animal === 'cat' ? '猫猫' : '狗狗'} · ${move.color === 1 ? '黑棋' : '白棋'}` : total ? '开局 · 空棋盘' : '本局尚未落子';
+  input('replayProgress').setAttribute('aria-valuetext', `${el('replayCount').textContent}，${el('replayMove').textContent}`);
+  for (const id of ['replayStart', 'replayPrevious']) button(id).disabled = replayStep === 0;
+  for (const id of ['replayNext', 'replayEnd']) button(id).disabled = replayStep === total;
+}
+
+function seekReplay(step: number) {
+  if (snapshot?.phase !== 'finished' || replayStep === null || !Number.isFinite(step)) return;
+  replayStep = Math.max(0, Math.min(snapshot.moves.length, Math.trunc(step)));
+  renderReplay(); renderBoard();
 }
 
 function positionLobby() {
@@ -288,7 +316,7 @@ function render() {
     el('resultTitle').textContent = `${winner}赢啦！！`;
     el('resultReason').textContent = s.reason === 'resign' ? `${s.players[2 - s.winner!].name}已认输✋️😭✋️` : s.reason === 'timeout' ? `${turnName}行棋超时` : '五子连线，这一局好精彩哇！';
   }
-  el('resultPanel').hidden = !resultKey || dismissedResult === resultKey;
+  el('resultPanel').hidden = replayStep !== null || !resultKey || dismissedResult === resultKey;
   if (s.application) el('applicantName').textContent = `${s.application.name}想加入你的房间👀请确认是对方本人哦！`;
   for (const id of ['approve', 'reject', 'leave']) button(id).disabled = busy || !connected || !!uncertain;
   button('confirm').disabled = !selection || !canMove();
@@ -314,7 +342,7 @@ function render() {
     node.disabled = busy || !connected || !!uncertain || s.phase === 'closed' || !s.players.every(p => p.online && p.synced);
   }
   el('selectionHint').textContent = selection ? `已选 ${String.fromCharCode(65 + selection.x)}${selection.y + 1}，确认后才落子` : '点选交叉点，再确认落子';
-  renderBoard(); renderClock();
+  renderReplay(); renderBoard(); renderClock();
 }
 
 function apply(reply: Reply) {
@@ -325,6 +353,7 @@ function apply(reply: Reply) {
     snapshot = null; room = reply.room; render(); return;
   }
   if (snapshot && (reply.version < snapshot.version || reply.serverNow < snapshot.serverNow)) return;
+  if (snapshot?.gameId !== reply.gameId || reply.phase !== 'finished') replayStep = null;
   connected = true; superseded = false;
   if (snapshot?.gameId !== reply.gameId || snapshot.moves.length !== reply.moves.length || reply.phase !== 'running') selection = null;
   if (snapshot?.gameId !== reply.gameId) bubbles.clear();
@@ -419,7 +448,7 @@ async function mutate(action: Action, data: Record<string, unknown> = {}, retry 
 async function connect(action: 'create' | 'apply' | 'connect', target: string) {
   soundEvents.reset(); audio.stop();
   epoch++; room = target; snapshot = null; pending = false; applicationId = null;
-  connected = false; selection = null; uncertain = null;
+  connected = false; selection = null; uncertain = null; replayStep = null;
   notice('正在连接你们的棋桌…');
   await login();
   const name = input('nickname').value.trim();
@@ -551,6 +580,17 @@ button('ready').onclick = () => { void run(() => mutate('ready')); };
 button('rematch').onclick = () => { void run(() => mutate('rematch')); };
 button('acceptRematch').onclick = () => { void run(() => mutate('rematch')); };
 button('dismissResult').onclick = () => { dismissedResult = resultKey; el('resultPanel').hidden = true; };
+button('reviewGame').onclick = () => {
+  if (snapshot?.phase !== 'finished') return;
+  replayStep = snapshot.moves.length; selection = null; render();
+  input('replayProgress').focus();
+};
+button('exitReplay').onclick = () => { replayStep = null; render(); button('reviewGame').focus(); };
+button('replayStart').onclick = () => seekReplay(0);
+button('replayPrevious').onclick = () => seekReplay((replayStep ?? 0) - 1);
+button('replayNext').onclick = () => seekReplay((replayStep ?? 0) + 1);
+button('replayEnd').onclick = () => seekReplay(snapshot?.moves.length ?? 0);
+input('replayProgress').oninput = () => seekReplay(input('replayProgress').valueAsNumber);
 button('dismissFeedback').onclick = () => { el('feedback').hidden = true; };
 button('approve').onclick = () => { void run(() => mutate('approve', { application: snapshot?.application?.id })); };
 button('reject').onclick = () => { void run(() => mutate('reject', { application: snapshot?.application?.id })); };

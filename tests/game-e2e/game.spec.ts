@@ -400,6 +400,11 @@ test('public authoritative timeout and disconnect pause/resume', async ({ browse
     await expect(b.locator('#gameStatus')).toContainText('获胜');
     await expect(a.locator('#lobbyText')).toContainText('超时');
     for (const p of [a,b]) { await expect(p.locator('#resultPanel')).toBeVisible(); await expect(p.locator('#resultReason')).toContainText('行棋超时'); }
+    await a.locator('#reviewGame').click();
+    await expect(a.locator('#replayCount')).toHaveText('第 0 / 0 手');
+    await expect(a.locator('#board .stone')).toHaveCount(0);
+    await a.locator('#exitReplay').click();
+    await expect(a.locator('#resultPanel')).toBeVisible();
     expect(await a.locator('#gameStatus').textContent()).toBe(await b.locator('#gameStatus').textContent());
     expect(game.errors).toEqual([]);
   } finally { await finish(contexts); }
@@ -881,4 +886,163 @@ test('simultaneous resignations converge on one authoritative result', async ({ 
     expect(results.every(result => result.phase === 'finished' && result.reason === 'resign')).toBe(true);
     expect(game.errors).toEqual([]);
   } finally {release(); await finish(game.contexts);}
+});
+
+test('replay is local, independent, responsive and resets only when a rematch starts', async ({ browser }) => {
+  test.skip(!process.env.GOMOKU_LOCAL_SQL && !process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL);
+  const game = await pair(browser);
+  const { a, b } = game;
+  try {
+    for (const page of [a, b]) await expect(page.locator('#reviewGame')).toBeHidden();
+    const black = game.state().blackSeat === 1 ? a : b, white = black === a ? b : a;
+    for (let x = 0; x < 5; x++) {
+      await play(black, x, 0, black === b);
+      if (x < 4) await play(white, x, 2, white === b);
+    }
+    await expect(a.locator('#resultPanel')).toBeVisible();
+    await expect(b.locator('#resultPanel')).toBeVisible();
+    await a.evaluate(async () => { await document.fonts.ready; });
+    await a.clock.install();
+    await a.clock.pauseAt(new Date());
+    await a.waitForTimeout(250);
+    const requests: string[] = [];
+    a.on('request', request => requests.push(request.url()));
+    const original = game.state();
+    const status = await a.locator('#gameStatus').textContent();
+    const clock = await a.locator('#clock').textContent();
+    await a.locator('#reviewGame').click();
+    await expect(a.locator('#resultPanel')).toBeHidden();
+    await expect(a.locator('#replayCount')).toHaveText('第 9 / 9 手');
+    await expect(a.locator('#winOverlay line')).toHaveCount(1);
+    await a.locator('#replayPrevious').click();
+    await expect(a.locator('#replayCount')).toHaveText('第 8 / 9 手');
+    await expect(a.locator('#replayMove')).toHaveText(`${original.players[original.moves[7].seat - 1].animal === 'cat' ? '猫猫' : '狗狗'} · 白棋`);
+    await expect(a.locator('#winOverlay line')).toHaveCount(0);
+    await expect(a.locator('#board .stone.last')).toHaveCount(1);
+    await a.locator('#replayStart').click();
+    await expect(a.locator('#board .stone')).toHaveCount(0);
+    await expect(a.locator('#replayPrevious')).toBeDisabled();
+    await a.locator('#board [data-x="7"][data-y="7"]').click({ force: true });
+    await a.locator('#board [data-x="7"][data-y="7"]').press('Enter');
+    await a.locator('#confirm').evaluate((node: HTMLButtonElement) => node.click());
+    await expect(a.locator('#board .preview')).toHaveCount(0);
+    await expect(a.locator('#confirm')).toBeDisabled();
+    await a.locator('#replayNext').click();
+    await expect(a.locator('#board .stone.last')).toHaveCount(1);
+    await expect(a.locator('#replayMove')).toHaveText(`${original.players[original.moves[0].seat - 1].animal === 'cat' ? '猫猫' : '狗狗'} · 黑棋`);
+    await a.locator('#replayProgress').evaluate((node: HTMLInputElement) => {
+      node.value = '4'; node.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await expect(a.locator('#replayCount')).toHaveText('第 4 / 9 手');
+    await expect(a.locator('#board .stone')).toHaveCount(4);
+    await expect(b.locator('#board .stone')).toHaveCount(9);
+    await expect(b.locator('#resultPanel')).toBeVisible();
+    await b.locator('#reviewGame').click(); await b.locator('#replayStart').click();
+    await expect(b.locator('#replayCount')).toHaveText('第 0 / 9 手');
+    await expect(a.locator('#replayCount')).toHaveText('第 4 / 9 手');
+    await a.locator('#replayEnd').click();
+    await expect(a.locator('#winOverlay line')).toHaveCount(1);
+    await expect(a.locator('#replayNext')).toBeDisabled();
+    expect(requests).toEqual([]);
+    for (const width of [320, 360, 390, 430, 760, 899, 900, 1024, 1280]) {
+      await a.setViewportSize({ width, height: 1000 });
+      const board = await a.locator('#board').boundingBox();
+      const self = await a.locator('#selfPlayer').boundingBox();
+      const controls = await a.locator('#replayArea').boundingBox();
+      expect(controls!.y).toBeGreaterThan(board!.y + board!.height);
+      expect(self!.y).toBeGreaterThanOrEqual(controls!.y + controls!.height);
+      expect(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await expect(a.locator(width >= 900 ? '#desktopActions > #moveControls' : '#boardArea > #moveControls')).toHaveCount(1);
+      await a.locator('#exitReplay').click();
+      const fullBoard = await a.locator('#board').boundingBox(), fullSelf = await a.locator('#selfPlayer').boundingBox();
+      expect(fullBoard).toEqual(board); expect(fullSelf).toEqual(self);
+      await expect(a.locator('#resultPanel')).toBeVisible();
+      await a.locator('#reviewGame').click();
+    }
+    await a.screenshot({ path: 'test-results/screenshots/replay-desktop.png', fullPage: true });
+    await a.setViewportSize({ width: 390, height: 1000 });
+    await a.locator('#replayPrevious').click();
+    await a.screenshot({ path: 'test-results/screenshots/replay-mobile.png', fullPage: true });
+    expect(requests.filter(url => url.includes('/rpc/'))).toEqual([]);
+    expect(game.state()).toEqual(original);
+    await expect(a.locator('#gameStatus')).toHaveText(status!);
+    await expect(a.locator('#clock')).toHaveText(clock!);
+    await a.clock.resume();
+    await a.reload();
+    await expect(a.locator('#board .stone')).toHaveCount(9);
+    await a.locator('#dismissResult').click();
+    await a.locator('#reviewGame').click(); await a.locator('#replayStart').click();
+    await a.locator('#exitReplay').click();
+    await expect(a.locator('#resultPanel')).toBeHidden();
+    await a.locator('#rematch').click();
+    await a.locator('#reviewGame').click(); await a.locator('#replayStart').click();
+    await expect(b.locator('#acceptRematch')).toBeVisible();
+    await expect(a.locator('#replayCount')).toHaveText('第 0 / 9 手');
+    await b.locator('#acceptRematch').click();
+    for (const page of [a, b]) {
+      await expect(page.locator('#round')).toHaveText('02');
+      await expect(page.locator('#replayArea')).toBeHidden();
+      await expect(page.locator('#board .stone')).toHaveCount(0);
+    }
+    const nextBlack = game.state().blackSeat === 1 ? a : b;
+    await play(nextBlack, 7, 7, nextBlack === b);
+    expect(game.errors).toEqual([]);
+  } finally { await finish(game.contexts); }
+});
+
+test('replay after undo and resignation excludes removed stones and supports an empty game', async ({ browser }) => {
+  test.skip(!process.env.GOMOKU_LOCAL_SQL && !process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL);
+  const game = await pair(browser);
+  const black = game.state().blackSeat === 1 ? game.a : game.b, white = black === game.a ? game.b : game.a;
+  try {
+    await play(black, 7, 7, black === game.b); await play(white, 8, 8, white === game.b);
+    await black.locator('#undo').click(); await black.locator('#requestUndo').click();
+    await expect(white.locator('#reviewGame')).toBeHidden();
+    await white.locator('#acceptUndo').click();
+    await expect(black.locator('#board .stone')).toHaveCount(0);
+    await play(black, 6, 6, black === game.b);
+    await white.locator('#resign').click(); await white.locator('#confirmResign').click();
+    await black.reload();
+    await black.locator('#reviewGame').click();
+    await expect(black.locator('#replayCount')).toHaveText('第 1 / 1 手');
+    await expect(black.locator('#board [data-x="7"][data-y="7"] .stone')).toHaveCount(0);
+    await expect(black.locator('#board [data-x="8"][data-y="8"] .stone')).toHaveCount(0);
+    await black.locator('#replayStart').click(); await black.locator('#replayEnd').click();
+    await expect(black.locator('#board [data-x="6"][data-y="6"] .stone')).toHaveCount(1);
+    await black.locator('#exitReplay').click();
+    await expect(black.locator('#resultPanel')).toBeVisible();
+    await black.locator('#rematch').click(); await white.locator('#acceptRematch').click();
+    await expect(black.locator('#round')).toHaveText('02');
+    await black.locator('#resign').click(); await black.locator('#confirmResign').click();
+    await black.locator('#reviewGame').click();
+    await expect(black.locator('#replayCount')).toHaveText('第 0 / 0 手');
+    await expect(black.locator('#replayMove')).toHaveText('本局尚未落子');
+    for (const id of ['replayProgress', 'replayStart', 'replayPrevious', 'replayNext', 'replayEnd']) await expect(black.locator(`#${id}`)).toBeDisabled();
+    await black.locator('#exitReplay').click();
+    await expect(black.locator('#resultPanel')).toBeVisible();
+    expect(game.errors).toEqual([]);
+  } finally { await finish(game.contexts); }
+});
+
+test('replay renders timeout, draw and disconnect end snapshots without requiring moves', async ({ browser }) => {
+  test.skip(!process.env.GOMOKU_LOCAL_SQL);
+  const game = await pair(browser);
+  try {
+    for (const reason of ['timeout', 'draw', 'disconnect_timeout'] as const) {
+      await game.a.route('**/rpc/gomoku_command', async route => {
+        const response = await route.fetch();
+        const snapshot = await response.json() as Snapshot;
+        await route.fulfill({ response, json: { ...snapshot, phase: 'finished', reason, moves: [], winLine: [],
+          winner: reason === 'timeout' ? 2 : null, turnDeadline: null, offlineDeadline: null, undoRequest: null } });
+      });
+      await game.a.reload();
+      await game.a.locator('#reviewGame').click();
+      await expect(game.a.locator('#replayCount')).toHaveText('第 0 / 0 手');
+      await expect(game.a.locator('#board .stone')).toHaveCount(0);
+      await game.a.locator('#exitReplay').click();
+      await expect(game.a.locator('#gameStatus')).toContainText(reason === 'draw' ? '平分秋色' : reason === 'timeout' ? '获胜' : '中止');
+      await game.a.unroute('**/rpc/gomoku_command');
+    }
+    expect(game.errors).toEqual([]);
+  } finally { await finish(game.contexts); }
 });

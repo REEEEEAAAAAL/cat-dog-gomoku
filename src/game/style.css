@@ -60,3 +60,9 @@ button.resign:hover:not(:disabled){background:#f5e7e1;border-color:#cda69c}
 #resign:hover:not(:disabled){background:transparent;border-color:transparent;color:#a97770}
 
 @media(min-width:900px){.desktop-actions .interaction-controls{margin-right:-32px;gap:4px}.desktop-actions .reactions{flex:0 0 calc(round(down,calc(100% - 49px),47px) - 3px);scroll-snap-type:x mandatory}.desktop-actions .reactions button{scroll-snap-align:start}}
+
+.replay-area{padding-top:14px;min-height:108px}.replay-row{display:flex;justify-content:flex-end;align-items:center;min-height:46px}.replay-area button{min-height:44px;font-size:12px;white-space:nowrap}.replay-timeline{display:flex;align-items:center;gap:12px;width:100%}.replay-timeline input{flex:1;min-width:0;width:0;height:44px;min-height:44px;margin:0;padding:0;border:0;accent-color:var(--green);cursor:pointer}.replay-timeline button{flex-shrink:0;padding-inline:10px}.replay-details{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:48px}.replay-info{display:flex;flex-direction:column;gap:3px;font-size:12px;font-variant-numeric:tabular-nums}.replay-info small{color:var(--muted);font-size:11px}.replay-buttons{display:flex;gap:4px;flex-shrink:0}.replay-buttons button{width:40px;padding:0;font-size:20px;background:var(--paper)}
+@media(max-width:899px){.replay-area{max-width:600px}.replay-area:not([hidden])~.move-controls{padding-top:10px}}
+
+.replay-buttons svg{display:block;width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+@media(min-width:900px){.replay-details{margin-top:10px}.replay-area{min-height:118px}}
