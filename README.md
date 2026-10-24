@@ -15,7 +15,7 @@ The hosted game uses a CloudBase trial environment with limited validity and quo
 - Server-managed 60-second turns, disconnect pauses, and recovery after refresh. A five-minute unresolved disconnect ends the round without a winner.
 - Negotiated undo, up to two successful uses per player per round; both players review the affected stones before approval.
 - Resignation at any time after a round starts, with confirmation and a server-persisted result; no opponent approval is needed.
-- Review the finished round on the same board, stepping through moves, jumping to either end, or scrubbing the timeline with player and color labels. Replay is local and independent for each player; undone moves are excluded and past rounds are not permanently archived.
+- Review the finished round on the same board, stepping through moves, jumping to either end, or scrubbing the timeline with player and color labels and toggleable move numbers. Replay is local and independent for each player; undone moves are excluded and past rounds are not permanently archived.
 - Rematches with swapped colors, eight fixed reactions, and local sound effects with a persistent mute setting.
 
 There is no matchmaking, spectator mode, free-text chat, or computer opponent. An invitation grants permission to apply, not ownership of a player's seat. Returning players use the same browser session; another browser cannot take over their identity. Leaving closes the room for both players, and rooms expire after 24 hours.

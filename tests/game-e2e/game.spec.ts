@@ -913,12 +913,23 @@ test('replay is local, independent, responsive and resets only when a rematch st
     await a.locator('#reviewGame').click();
     await expect(a.locator('#resultPanel')).toBeHidden();
     await expect(a.locator('#replayCount')).toHaveText('第 9 / 9 手');
+    await expect(a.locator('#board .stone-number')).toHaveCount(9);
+    for (const [index, move] of original.moves.entries()) {
+      await expect(a.locator(`#board [data-x="${move.x}"][data-y="${move.y}"] .stone-number`)).toHaveText(String(index + 1));
+    }
+    await expect(a.locator('#toggleReplayNumbers')).toHaveText('隐藏步数');
+    await a.locator('#toggleReplayNumbers').click();
+    await expect(a.locator('#board .stone-number')).toHaveCount(0);
+    await expect(a.locator('#toggleReplayNumbers')).toHaveText('显示步数');
+    await expect(a.locator('#board .replay-current')).toHaveCount(1);
+    await a.locator('#toggleReplayNumbers').click();
+    await expect(a.locator('#board .stone-number')).toHaveCount(9);
     await expect(a.locator('#winOverlay line')).toHaveCount(1);
     await a.locator('#replayPrevious').click();
     await expect(a.locator('#replayCount')).toHaveText('第 8 / 9 手');
     await expect(a.locator('#replayMove')).toHaveText(`${original.players[original.moves[7].seat - 1].animal === 'cat' ? '猫猫' : '狗狗'} · 白棋`);
     await expect(a.locator('#winOverlay line')).toHaveCount(0);
-    await expect(a.locator('#board .stone.last')).toHaveCount(1);
+    await expect(a.locator('#board .stone.replay-current')).toHaveCount(1);
     await a.locator('#replayStart').click();
     await expect(a.locator('#board .stone')).toHaveCount(0);
     await expect(a.locator('#replayPrevious')).toBeDisabled();
@@ -928,17 +939,23 @@ test('replay is local, independent, responsive and resets only when a rematch st
     await expect(a.locator('#board .preview')).toHaveCount(0);
     await expect(a.locator('#confirm')).toBeDisabled();
     await a.locator('#replayNext').click();
-    await expect(a.locator('#board .stone.last')).toHaveCount(1);
+    await expect(a.locator('#board .stone.replay-current')).toHaveCount(1);
     await expect(a.locator('#replayMove')).toHaveText(`${original.players[original.moves[0].seat - 1].animal === 'cat' ? '猫猫' : '狗狗'} · 黑棋`);
     await a.locator('#replayProgress').evaluate((node: HTMLInputElement) => {
       node.value = '4'; node.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await expect(a.locator('#replayCount')).toHaveText('第 4 / 9 手');
     await expect(a.locator('#board .stone')).toHaveCount(4);
+    await expect(a.locator('#board .stone-number')).toHaveCount(4);
+    await expect(a.locator('#board .replay-current .stone-number')).toHaveText('4');
     await expect(b.locator('#board .stone')).toHaveCount(9);
     await expect(b.locator('#resultPanel')).toBeVisible();
     await b.locator('#reviewGame').click(); await b.locator('#replayStart').click();
     await expect(b.locator('#replayCount')).toHaveText('第 0 / 9 手');
+    await b.locator('#replayNext').click(); await b.locator('#toggleReplayNumbers').click();
+    await expect(b.locator('#board .stone-number')).toHaveCount(0);
+    await expect(a.locator('#board .stone-number')).toHaveCount(4);
+    await b.locator('#replayStart').click();
     await expect(a.locator('#replayCount')).toHaveText('第 4 / 9 手');
     await a.locator('#replayEnd').click();
     await expect(a.locator('#winOverlay line')).toHaveCount(1);
@@ -954,6 +971,9 @@ test('replay is local, independent, responsive and resets only when a rematch st
       expect(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await expect(a.locator(width >= 900 ? '#desktopActions > #moveControls' : '#boardArea > #moveControls')).toHaveCount(1);
       await a.locator('#exitReplay').click();
+      await expect(a.locator('#board .stone-number')).toHaveCount(0);
+      await expect(a.locator('#board .replay-current')).toHaveCount(0);
+      await expect(a.locator('#board .stone.last')).toHaveCount(1);
       const fullBoard = await a.locator('#board').boundingBox(), fullSelf = await a.locator('#selfPlayer').boundingBox();
       expect(fullBoard).toEqual(board); expect(fullSelf).toEqual(self);
       await expect(a.locator('#resultPanel')).toBeVisible();
@@ -1005,6 +1025,7 @@ test('replay after undo and resignation excludes removed stones and supports an 
     await black.reload();
     await black.locator('#reviewGame').click();
     await expect(black.locator('#replayCount')).toHaveText('第 1 / 1 手');
+    await expect(black.locator('#board .stone-number')).toHaveText('1');
     await expect(black.locator('#board [data-x="7"][data-y="7"] .stone')).toHaveCount(0);
     await expect(black.locator('#board [data-x="8"][data-y="8"] .stone')).toHaveCount(0);
     await black.locator('#replayStart').click(); await black.locator('#replayEnd').click();
@@ -1016,10 +1037,78 @@ test('replay after undo and resignation excludes removed stones and supports an 
     await black.locator('#resign').click(); await black.locator('#confirmResign').click();
     await black.locator('#reviewGame').click();
     await expect(black.locator('#replayCount')).toHaveText('第 0 / 0 手');
+    await expect(black.locator('#board .stone-number')).toHaveCount(0);
     await expect(black.locator('#replayMove')).toHaveText('本局尚未落子');
     for (const id of ['replayProgress', 'replayStart', 'replayPrevious', 'replayNext', 'replayEnd']) await expect(black.locator(`#${id}`)).toBeDisabled();
     await black.locator('#exitReplay').click();
     await expect(black.locator('#resultPanel')).toBeVisible();
+    expect(game.errors).toEqual([]);
+  } finally { await finish(game.contexts); }
+});
+
+test('replay numbers fit dense end snapshots on phones and desktops', async ({ browser }) => {
+  test.skip(!process.env.GOMOKU_LOCAL_SQL);
+  const game = await pair(browser);
+  const page = game.a;
+  try {
+    await page.route('**/rpc/gomoku_command', async route => {
+      const response = await route.fetch();
+      const snapshot = await response.json() as Snapshot;
+      const moves = Array.from({ length: 225 }, (_, index) => {
+        const color = index % 2 === 0 ? 1 : 2;
+        return { x: index % 15, y: Math.floor(index / 15), color, seat: color === 1 ? snapshot.blackSeat : 3 - snapshot.blackSeat };
+      });
+      await route.fulfill({ response, json: { ...snapshot, phase: 'finished', reason: 'draw', moves, winLine: [],
+        winner: null, turnDeadline: null, offlineDeadline: null, undoRequest: null } });
+    });
+    await page.reload(); await page.locator('#reviewGame').click();
+    await page.evaluate(async () => { await document.fonts.ready; });
+    await expect(page.locator('#board .stone-number')).toHaveCount(225);
+    await expect(page.locator('#board .replay-current .stone-number')).toHaveText('225');
+    await expect(page.locator('#board .stone:not(.white) .stone-number').first()).toHaveCSS('color', 'rgb(255, 253, 247)');
+    await expect(page.locator('#board .stone.white .stone-number').first()).toHaveCSS('color', 'rgb(38, 59, 54)');
+    for (const width of [320, 360, 390, 760, 900, 1280]) {
+      await page.setViewportSize({ width, height: 1000 });
+      const metrics = await page.locator('.stone-number').evaluateAll(nodes => nodes.map(node => {
+        const number = node.getBoundingClientRect(), stone = node.parentElement!.getBoundingClientRect();
+        return { text: node.textContent, width: number.width / stone.width, height: number.height / stone.height,
+          dx: Math.abs(number.x + number.width / 2 - stone.x - stone.width / 2),
+          dy: Math.abs(number.y + number.height / 2 - stone.y - stone.height / 2) };
+      }));
+      expect(metrics.map(number => number.text)).toEqual(Array.from({ length: 225 }, (_, i) => String(i + 1)));
+      expect(metrics.every(number => number.width < .93 && number.height < .65 && number.dx < .6 && number.dy < .6)).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      const icons = await page.locator('.replay-buttons svg').evaluateAll(nodes => nodes.map(node => {
+        const svg = node.getBoundingClientRect(), button = node.parentElement!.getBoundingClientRect();
+        const path = node.querySelector('path')!, length = path.getTotalLength();
+        const points = Array.from({ length: 200 }, (_, i) => path.getPointAtLength(length * (i + .5) / 200));
+        return { dx: Math.abs(svg.x + svg.width / 2 - button.x - button.width / 2),
+          dy: Math.abs(svg.y + svg.height / 2 - button.y - button.height / 2),
+          visualX: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+          visualY: points.reduce((sum, point) => sum + point.y, 0) / points.length };
+      }));
+      expect(icons.every(icon => icon.dx < .1 && icon.dy < .1 && Math.abs(icon.visualX - 12) < .25 && Math.abs(icon.visualY - 12) < .25)).toBe(true);
+      if ([320, 390, 1280].includes(width)) await page.locator('#boardArea').screenshot({ path: `test-results/screenshots/replay-numbered-${width}.png` });
+    }
+    await page.locator('#toggleReplayNumbers').click();
+    await expect(page.locator('#board .stone-number')).toHaveCount(0);
+    await page.locator('#replayPrevious').click();
+    await expect(page.locator('#board .stone-number')).toHaveCount(0);
+    await expect(page.locator('#board .replay-current')).toHaveCount(1);
+    await page.locator('#toggleReplayNumbers').click();
+    await expect(page.locator('#board .replay-current .stone-number')).toHaveText('224');
+    await page.locator('#replayProgress').evaluate((node: HTMLInputElement) => {
+      node.value = '103'; node.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await expect(page.locator('#board .stone-number')).toHaveCount(103);
+    await expect(page.locator('#board .replay-current .stone-number')).toHaveText('103');
+    await page.locator('#toggleReplayNumbers').click();
+    await page.locator('#exitReplay').click();
+    await expect(page.locator('#board .stone-number')).toHaveCount(0);
+    await expect(page.locator('#board .stone.last')).toHaveCount(1);
+    await page.locator('#reviewGame').click();
+    await expect(page.locator('#toggleReplayNumbers')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#board .stone-number')).toHaveCount(225);
     expect(game.errors).toEqual([]);
   } finally { await finish(game.contexts); }
 });

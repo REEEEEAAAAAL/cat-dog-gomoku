@@ -76,6 +76,7 @@ let resignGame: string | null = null;
 let resultKey = '';
 let dismissedResult = '';
 let replayStep: number | null = null;
+let showReplayNumbers = true;
 let feedbackTimer = 0;
 let lastActivityAt = performance.now();
 let idlePaused = false;
@@ -191,14 +192,18 @@ function playerElements(s: Snapshot) {
 function renderBoard() {
   const s = snapshot;
   const moves = replayStep === null ? s?.moves : s?.moves.slice(0, replayStep);
-  const map = new Map(moves?.map((m, i) => [`${m.x},${m.y}`, { ...m, last: i === moves.length - 1 }]));
+  const replaying = replayStep !== null;
+  el('board').classList.toggle('replaying', replaying);
+  const map = new Map(moves?.map((m, i) => [`${m.x},${m.y}`, { ...m, number: i + 1, last: i === moves.length - 1 }]));
   for (let i = 0; i < cells.length; i++) {
     const x = i % 15, y = Math.floor(i / 15), cell = cells[i];
     const move = map.get(`${x},${y}`);
     const preview = !move && selection?.x === x && selection.y === y;
     const color = move?.color ?? (s?.seat === s?.blackSeat ? 1 : 2);
-    cell.innerHTML = move || preview ? `<span class="stone ${color === 2 ? 'white' : ''} ${move?.last ? 'last' : ''} ${preview ? 'preview' : ''}"></span>` : '';
-    cell.setAttribute('aria-label', `${String.fromCharCode(65 + x)}${y + 1}${move ? color === 1 ? ' 黑棋' : ' 白棋' : ' 空位'}${preview ? ' 已选' : ''}`);
+    const mark = move?.last ? replaying ? 'replay-current' : 'last' : '';
+    const number = replaying && showReplayNumbers && move ? `<span class="stone-number" data-digits="${String(move.number).length}">${move.number}</span>` : '';
+    cell.innerHTML = move || preview ? `<span class="stone ${color === 2 ? 'white' : ''} ${mark} ${preview ? 'preview' : ''}">${number}</span>` : '';
+    cell.setAttribute('aria-label', `${String.fromCharCode(65 + x)}${y + 1}${move ? color === 1 ? ' 黑棋' : ' 白棋' : ' 空位'}${replaying && move ? ` 第 ${move.number} 手` : ''}${preview ? ' 已选' : ''}`);
     cell.setAttribute('aria-disabled', String(!!move || !canMove()));
   }
   const line = replayStep === null || replayStep === s?.moves.length ? s?.winLine : null;
@@ -216,6 +221,8 @@ function renderReplay() {
   button('reviewGame').hidden = active;
   el('replayTimeline').hidden = !active;
   el('replayDetails').style.visibility = active ? 'visible' : 'hidden';
+  button('toggleReplayNumbers').textContent = showReplayNumbers ? '隐藏步数' : '显示步数';
+  button('toggleReplayNumbers').setAttribute('aria-pressed', String(showReplayNumbers));
   if (!s || replayStep === null) return;
   const total = s.moves.length;
   input('replayProgress').max = String(total);
@@ -582,7 +589,7 @@ button('acceptRematch').onclick = () => { void run(() => mutate('rematch')); };
 button('dismissResult').onclick = () => { dismissedResult = resultKey; el('resultPanel').hidden = true; };
 button('reviewGame').onclick = () => {
   if (snapshot?.phase !== 'finished') return;
-  replayStep = snapshot.moves.length; selection = null; render();
+  replayStep = snapshot.moves.length; showReplayNumbers = true; selection = null; render();
   input('replayProgress').focus();
 };
 button('exitReplay').onclick = () => { replayStep = null; render(); button('reviewGame').focus(); };
@@ -591,6 +598,10 @@ button('replayPrevious').onclick = () => seekReplay((replayStep ?? 0) - 1);
 button('replayNext').onclick = () => seekReplay((replayStep ?? 0) + 1);
 button('replayEnd').onclick = () => seekReplay(snapshot?.moves.length ?? 0);
 input('replayProgress').oninput = () => seekReplay(input('replayProgress').valueAsNumber);
+button('toggleReplayNumbers').onclick = () => {
+  if (snapshot?.phase !== 'finished' || replayStep === null) return;
+  showReplayNumbers = !showReplayNumbers; renderReplay(); renderBoard();
+};
 button('dismissFeedback').onclick = () => { el('feedback').hidden = true; };
 button('approve').onclick = () => { void run(() => mutate('approve', { application: snapshot?.application?.id })); };
 button('reject').onclick = () => { void run(() => mutate('reject', { application: snapshot?.application?.id })); };
