@@ -214,15 +214,27 @@ function renderBoard() {
   } else el('winOverlay').replaceChildren();
 }
 
+function positionReplayAside() {
+  const active = desktopLayout.matches && replayStep !== null;
+  el('room').classList.toggle('reviewing', active);
+  const height = active ? document.querySelector('.play-area')!.getBoundingClientRect().height - el('replayArea').getBoundingClientRect().height : 0;
+  if (active) el('room').style.setProperty('--replay-aside-height', `${height}px`);
+  else el('room').style.removeProperty('--replay-aside-height');
+}
+window.addEventListener('resize', positionReplayAside);
+desktopLayout.addEventListener('change', positionReplayAside);
+
 function renderReplay() {
   const s = snapshot;
   el('replayArea').hidden = s?.phase !== 'finished';
   const active = replayStep !== null;
+  el('replayArea').classList.toggle('expanded', active);
   button('reviewGame').hidden = active;
   el('replayTimeline').hidden = !active;
-  el('replayDetails').style.visibility = active ? 'visible' : 'hidden';
+  el('replayDetails').hidden = !active;
   button('toggleReplayNumbers').textContent = showReplayNumbers ? '隐藏步数' : '显示步数';
   button('toggleReplayNumbers').setAttribute('aria-pressed', String(showReplayNumbers));
+  positionReplayAside();
   if (!s || replayStep === null) return;
   const total = s.moves.length;
   input('replayProgress').max = String(total);

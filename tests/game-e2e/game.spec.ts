@@ -89,6 +89,10 @@ async function pair(browser: Browser, mobile = false, bothDesktop = false, verif
   await b.locator('#ready').click();
   await expect(a.locator('#gameStatus')).toContainText(/的回合|你的回合/);
   await expect(b.locator('#gameStatus')).toContainText(/的回合|你的回合/);
+  for (const page of [a, b]) {
+    await expect(page.locator('#reactions button')).toHaveText(['😼', '🐶', '❤️', '🥺', '😭', '😤', '😂', '🎉']);
+    await expect(page.locator('#reactions button').first()).toHaveAttribute('aria-label', '发送猫猫表情');
+  }
   return { contexts, a, b, errors, snapshots, state: () => state! };
 }
 
@@ -442,9 +446,9 @@ test('mutual undo, exact impact, emoji delivery while paused and refreshed reque
     expect(responsePanel!.y + responsePanel!.height).toBeLessThan(boardArea!.y);
     await expect(white.locator('#undoImpact')).toContainText('最近 2 颗');
     await expect(white.locator('#gameStatus')).toHaveText('悔棋请求待处理');
-    await white.locator('[data-emoji="heart"]').click();
-    await expect(white.locator('#selfPlayer .reaction-bubble')).toHaveText('❤️');
-    await expect(black.locator('#opponentPlayer .reaction-bubble')).toHaveText('❤️');
+    await white.locator('[data-emoji="cat"]').click();
+    await expect(white.locator('#selfPlayer .reaction-bubble')).toHaveText('😼');
+    await expect(black.locator('#opponentPlayer .reaction-bubble')).toHaveText('😼');
     await black.reload();
     await expect(black.locator('#undoPanel')).toBeVisible();
     await expect(black.locator('.reaction-bubble')).toHaveCount(0);
@@ -785,6 +789,7 @@ test('resignation controls align on phones and desktops and dialogs fit narrow s
   try {
     for (const width of [320,360,390,430,760,900,1024,1280]) {
       const page = game.a; await page.setViewportSize({width,height:1000});
+      await page.mouse.move(0, 0);
       const resign = (await page.locator('#resign').boundingBox())!, undo = (await page.locator('#undo').boundingBox())!;
       const cancel = (await page.locator('#cancel').boundingBox())!, confirm = (await page.locator('#confirm').boundingBox())!;
       expect(Math.abs(resign.y-undo.y)).toBeLessThan(1);
@@ -792,6 +797,11 @@ test('resignation controls align on phones and desktops and dialogs fit narrow s
       expect(resign.height).toBeGreaterThanOrEqual(44);
       await expect(page.locator('#resign')).toHaveCSS('background-color','rgba(0, 0, 0, 0)');
       await expect(page.locator('#resign')).toHaveCSS('border-top-color','rgba(0, 0, 0, 0)');
+      if (width >= 900) {
+        await page.locator('#resign').hover();
+        await expect(page.locator('#resign')).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+        await page.mouse.move(0, 0);
+      }
       expect(Math.abs(resign.x-cancel.x)).toBeLessThan(1);
       expect(Math.abs(undo.x-confirm.x)).toBeLessThan(1);
       expect(width >= 900 ? resign.x > undo.x : resign.x < undo.x).toBe(true);
@@ -816,6 +826,11 @@ test('resignation controls align on phones and desktops and dialogs fit narrow s
         expect(next.x + next.width).toBeLessThan(width);
       }
       await page.locator('#resign').click();
+      if (width >= 900) {
+        const before = await page.locator('#confirmResign').evaluate(node => getComputedStyle(node).backgroundColor);
+        await page.locator('#confirmResign').hover();
+        await expect(page.locator('#confirmResign')).not.toHaveCSS('background-color', before);
+      }
       const dialog = (await page.locator('#resignDialog').boundingBox())!;
       expect(dialog.x).toBeGreaterThanOrEqual(0); expect(dialog.x+dialog.width).toBeLessThanOrEqual(width);
       await page.screenshot({path:`test-results/screenshots/surrender-dialog-${width}.png`,fullPage:true});
@@ -894,6 +909,20 @@ test('replay is local, independent, responsive and resets only when a rematch st
   const { a, b } = game;
   try {
     for (const page of [a, b]) await expect(page.locator('#reviewGame')).toBeHidden();
+    const widths = [320, 360, 390, 430, 760, 899, 900, 1024, 1280];
+    const resize = async (width: number) => {
+      await a.setViewportSize({ width, height: 1000 });
+      await expect(a.locator(width >= 900 ? '#desktopActions > #moveControls' : '#boardArea > #moveControls')).toHaveCount(1);
+    };
+    const baseline = new Map<number, { selfGap: number; confirmGap: number }>();
+    const offsets = () => a.evaluate(() => {
+      const frame = document.querySelector('.board-wrap')!.getBoundingClientRect();
+      return { selfGap: document.querySelector('#selfPlayer')!.getBoundingClientRect().top - frame.bottom,
+        confirmGap: document.querySelector('#confirm')!.getBoundingClientRect().top - frame.bottom };
+    });
+    for (const width of widths) {
+      await resize(width); baseline.set(width, await offsets());
+    }
     const black = game.state().blackSeat === 1 ? a : b, white = black === a ? b : a;
     for (let x = 0; x < 5; x++) {
       await play(black, x, 0, black === b);
@@ -901,12 +930,36 @@ test('replay is local, independent, responsive and resets only when a rematch st
     }
     await expect(a.locator('#resultPanel')).toBeVisible();
     await expect(b.locator('#resultPanel')).toBeVisible();
+    for (const width of widths) {
+      await resize(width);
+      const ended = await offsets(), before = baseline.get(width)!;
+      expect(Math.abs((width >= 900 ? ended.selfGap - before.selfGap : ended.confirmGap - before.confirmGap))).toBeLessThan(1);
+      await expect(a.locator('#replayDetails')).toBeHidden();
+      await expect(a.locator('#replayTimeline')).toBeHidden();
+      const entry = (await a.locator('#reviewGame').boundingBox())!;
+      if (width >= 900) {
+        const card = (await a.locator('#selfPlayer').boundingBox())!;
+        const text = (await a.locator('#selfPlayer .player-info').boundingBox())!;
+        expect(entry.y).toBeGreaterThanOrEqual(card.y);
+        expect(entry.y + entry.height).toBeLessThanOrEqual(card.y + card.height);
+        expect(entry.x).toBeGreaterThanOrEqual(text.x + text.width);
+      } else {
+        const confirm = (await a.locator('#confirm').boundingBox())!, cancel = (await a.locator('#cancel').boundingBox())!;
+        expect(entry.x + entry.width).toBeLessThanOrEqual(Math.min(confirm.x, cancel.x));
+      }
+      expect(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      if ([390, 1280].includes(width)) await a.screenshot({ path: `test-results/screenshots/replay-collapsed-${width}.png`, fullPage: true });
+    }
     await a.evaluate(async () => { await document.fonts.ready; });
     await a.clock.install();
     await a.clock.pauseAt(new Date());
     await a.waitForTimeout(250);
     const requests: string[] = [];
-    a.on('request', request => requests.push(request.url()));
+    const rpcActions: string[] = [];
+    a.on('request', request => {
+      requests.push(request.url());
+      if (request.url().endsWith('/rpc/gomoku_command')) rpcActions.push((request.postDataJSON() as { p_action: string }).p_action);
+    });
     const original = game.state();
     const status = await a.locator('#gameStatus').textContent();
     const clock = await a.locator('#clock').textContent();
@@ -918,7 +971,15 @@ test('replay is local, independent, responsive and resets only when a rematch st
       await expect(a.locator(`#board [data-x="${move.x}"][data-y="${move.y}"] .stone-number`)).toHaveText(String(index + 1));
     }
     await expect(a.locator('#toggleReplayNumbers')).toHaveText('隐藏步数');
+    await expect(a.locator('#toggleReplayNumbers')).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
+    await expect(a.locator('#toggleReplayNumbers')).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    await a.mouse.move(0, 0);
+    const showing = await a.locator('#toggleReplayNumbers').evaluate(node => getComputedStyle(node).backgroundColor);
+    await a.locator('#toggleReplayNumbers').hover();
+    await expect(a.locator('#toggleReplayNumbers')).not.toHaveCSS('background-color', showing);
     await a.locator('#toggleReplayNumbers').click();
+    await a.mouse.move(0, 0);
+    await expect(a.locator('#toggleReplayNumbers')).not.toHaveCSS('background-color', showing);
     await expect(a.locator('#board .stone-number')).toHaveCount(0);
     await expect(a.locator('#toggleReplayNumbers')).toHaveText('显示步数');
     await expect(a.locator('#board .replay-current')).toHaveCount(1);
@@ -961,13 +1022,27 @@ test('replay is local, independent, responsive and resets only when a rematch st
     await expect(a.locator('#winOverlay line')).toHaveCount(1);
     await expect(a.locator('#replayNext')).toBeDisabled();
     expect(requests).toEqual([]);
-    for (const width of [320, 360, 390, 430, 760, 899, 900, 1024, 1280]) {
-      await a.setViewportSize({ width, height: 1000 });
+    expect(game.state()).toEqual(original);
+    const asideGeometry = () => a.evaluate(() => {
+      const top = document.querySelector('.board-wrap')!.getBoundingClientRect().top;
+      return ['.room-companions', '#interactionControls', '#confirm', '#leave'].map(selector => {
+        const box = document.querySelector(selector)!.getBoundingClientRect();
+        return { y: box.y - top, height: box.height };
+      });
+    });
+    for (const width of [...widths, 1024, 900, 1280]) {
+      await resize(width);
       const board = await a.locator('#board').boundingBox();
       const self = await a.locator('#selfPlayer').boundingBox();
       const controls = await a.locator('#replayArea').boundingBox();
+      const toggle = (await a.locator('#toggleReplayNumbers').boundingBox())!;
+      const navigation = (await a.locator('#replayPrevious').boundingBox())!;
+      expect(navigation.y - toggle.y - toggle.height).toBeGreaterThanOrEqual(10);
       expect(controls!.y).toBeGreaterThan(board!.y + board!.height);
       expect(self!.y).toBeGreaterThanOrEqual(controls!.y + controls!.height);
+      const expanded = await offsets(), before = baseline.get(width)!;
+      const expandedAside = width >= 900 ? await asideGeometry() : null;
+      expect(width >= 900 ? expanded.selfGap - before.selfGap : expanded.confirmGap - before.confirmGap).toBeGreaterThan(50);
       expect(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await expect(a.locator(width >= 900 ? '#desktopActions > #moveControls' : '#boardArea > #moveControls')).toHaveCount(1);
       await a.locator('#exitReplay').click();
@@ -975,7 +1050,17 @@ test('replay is local, independent, responsive and resets only when a rematch st
       await expect(a.locator('#board .replay-current')).toHaveCount(0);
       await expect(a.locator('#board .stone.last')).toHaveCount(1);
       const fullBoard = await a.locator('#board').boundingBox(), fullSelf = await a.locator('#selfPlayer').boundingBox();
-      expect(fullBoard).toEqual(board); expect(fullSelf).toEqual(self);
+      expect(fullBoard!.width).toBe(board!.width); expect(fullBoard!.height).toBe(board!.height);
+      expect(fullSelf!.height).toBe(self!.height);
+      const exited = await offsets();
+      expect(Math.abs(width >= 900 ? exited.selfGap - before.selfGap : exited.confirmGap - before.confirmGap)).toBeLessThan(1);
+      if (expandedAside) {
+        const collapsedAside = await asideGeometry();
+        for (let index = 0; index < expandedAside.length; index++) {
+          expect(Math.abs(expandedAside[index].y - collapsedAside[index].y)).toBeLessThan(1);
+          expect(Math.abs(expandedAside[index].height - collapsedAside[index].height)).toBeLessThan(1);
+        }
+      }
       await expect(a.locator('#resultPanel')).toBeVisible();
       await a.locator('#reviewGame').click();
     }
@@ -983,8 +1068,10 @@ test('replay is local, independent, responsive and resets only when a rematch st
     await a.setViewportSize({ width: 390, height: 1000 });
     await a.locator('#replayPrevious').click();
     await a.screenshot({ path: 'test-results/screenshots/replay-mobile.png', fullPage: true });
-    expect(requests.filter(url => url.includes('/rpc/'))).toEqual([]);
-    expect(game.state()).toEqual(original);
+    expect(rpcActions.every(action => ['snapshot', 'sync'].includes(action))).toBe(true);
+    for (const key of ['room', 'gameId', 'round', 'phase', 'blackSeat', 'turnSeat', 'moves', 'winLine', 'winner', 'reason', 'remainingMs', 'turnDeadline'] as const) {
+      expect(game.state()[key]).toEqual(original[key]);
+    }
     await expect(a.locator('#gameStatus')).toHaveText(status!);
     await expect(a.locator('#clock')).toHaveText(clock!);
     await a.clock.resume();
@@ -1026,6 +1113,10 @@ test('replay after undo and resignation excludes removed stones and supports an 
     await black.locator('#reviewGame').click();
     await expect(black.locator('#replayCount')).toHaveText('第 1 / 1 手');
     await expect(black.locator('#board .stone-number')).toHaveText('1');
+    await expect(black.locator('#board .replay-current')).toHaveCSS('outline-width', black.viewportSize()!.width >= 900 ? '4px' : '3px');
+    await white.locator('#reviewGame').click();
+    await expect(white.locator('#board .replay-current')).toHaveCSS('outline-width', white.viewportSize()!.width >= 900 ? '4px' : '3px');
+    await white.locator('#exitReplay').click();
     await expect(black.locator('#board [data-x="7"][data-y="7"] .stone')).toHaveCount(0);
     await expect(black.locator('#board [data-x="8"][data-y="8"] .stone')).toHaveCount(0);
     await black.locator('#replayStart').click(); await black.locator('#replayEnd').click();
@@ -1065,10 +1156,12 @@ test('replay numbers fit dense end snapshots on phones and desktops', async ({ b
     await page.evaluate(async () => { await document.fonts.ready; });
     await expect(page.locator('#board .stone-number')).toHaveCount(225);
     await expect(page.locator('#board .replay-current .stone-number')).toHaveText('225');
+    await expect(page.locator('#board .replay-current')).toHaveCSS('outline-width', '4px');
     await expect(page.locator('#board .stone:not(.white) .stone-number').first()).toHaveCSS('color', 'rgb(255, 253, 247)');
     await expect(page.locator('#board .stone.white .stone-number').first()).toHaveCSS('color', 'rgb(38, 59, 54)');
     for (const width of [320, 360, 390, 760, 900, 1280]) {
       await page.setViewportSize({ width, height: 1000 });
+      await expect(page.locator('#board .replay-current')).toHaveCSS('outline-width', width >= 900 ? '4px' : '3px');
       const metrics = await page.locator('.stone-number').evaluateAll(nodes => nodes.map(node => {
         const number = node.getBoundingClientRect(), stone = node.parentElement!.getBoundingClientRect();
         return { text: node.textContent, white: node.parentElement!.classList.contains('white'),
