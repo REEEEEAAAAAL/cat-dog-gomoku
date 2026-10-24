@@ -365,7 +365,7 @@ function render() {
   renderReplay(); renderBoard(); renderClock();
 }
 
-function apply(reply: Reply) {
+function apply(reply: Reply, timely: boolean) {
   const wasConnected = connected;
   if (reply.pending) {
     if (reply.withdrawn) return;
@@ -391,7 +391,8 @@ function apply(reply: Reply) {
       feedback('对方残忍拒绝了你的悔棋申请😭', true);
     }
   }
-  audio.play(soundEvents.observe(reply, wasConnected && !document.hidden && performance.now() - lastReceiptAt < 15000));
+  const sounds = soundEvents.observe(reply, wasConnected && !document.hidden && performance.now() - lastReceiptAt < 15000);
+  audio.play(sounds.filter(sound => sound !== 'start' || timely));
   snapshot = reply; pending = false; room = reply.room;
   serverAtReceipt = reply.serverNow; lastReceiptAt = performance.now();
   if (reply.phase === 'closed') forgetRoom(reply.room);
@@ -406,10 +407,10 @@ function command(action: Action, data: Record<string, unknown> = {}): Command {
 }
 
 async function exchange(request: Command) {
-  const active = epoch;
+  const active = epoch, requestedAt = performance.now();
   const reply = await send(request);
   if (active !== epoch) return null;
-  apply(reply);
+  apply(reply, performance.now() - requestedAt <= 1500);
   return reply;
 }
 
@@ -714,7 +715,14 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pageshow', () => { if (room && !document.hidden) void poll(); });
 for (const event of ['pointerdown', 'keydown'] as const) document.addEventListener(event, () => { lastActivityAt = performance.now(); }, { passive: true });
-window.setInterval(() => { void poll(); }, 5000);
+let lastScheduledPollAt = performance.now();
+window.setInterval(() => {
+  const awaitingStart = connected && snapshot && ['waiting', 'finished'].includes(snapshot.phase) && snapshot.players[snapshot.seat - 1].ready;
+  const now = performance.now();
+  if (now - lastScheduledPollAt < (awaitingStart ? 1000 : 5000)) return;
+  lastScheduledPollAt = now;
+  void poll();
+}, 1000);
 window.setInterval(renderClock, 250);
 if (roomPattern.test(invitation)) {
   input('roomInput').value = invitation;

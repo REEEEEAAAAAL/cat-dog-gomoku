@@ -45,10 +45,11 @@ async function setup(context: BrowserContext) {
   await context.addInitScript(instrumentAudio);
 }
 async function voices(page: Page) { return page.evaluate(() => window.soundProbe.voices); }
-async function count(page: Page, kind: 'move' | 'undo' | 'result' | 'animal') {
+async function count(page: Page, kind: 'start' | 'move' | 'undo' | 'result' | 'animal') {
   return (await voices(page)).filter(v => kind === 'move' ? v.kind === 'buffer' && v.duration >= .2 && v.duration <= .35
     : kind === 'undo' ? v.kind === 'buffer' && v.duration >= .6 && v.duration <= .9
-    : kind === 'result' ? v.kind === 'triangle' : v.kind === 'buffer' && v.duration > .9).length;
+    : kind === 'start' ? v.kind === 'buffer' && v.duration >= .92 && v.duration <= .95
+    : kind === 'result' ? v.kind === 'triangle' : v.kind === 'buffer' && v.duration > 1).length;
 }
 async function clear(page: Page) { await page.evaluate(() => { window.soundProbe.voices = []; }); }
 async function poll(page: Page) {
@@ -56,7 +57,7 @@ async function poll(page: Page) {
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await response;
 }
-async function pair(browser: Browser) {
+async function pair(browser: Browser, start = true) {
   const contexts = await Promise.all([browser.newContext(), browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true })]);
   for (const context of contexts) await setup(context);
   const [a, b] = await Promise.all(contexts.map(c => c.newPage()));
@@ -73,8 +74,15 @@ async function pair(browser: Browser) {
   await expect.poll(() => count(b, 'animal')).toBe(1);
   await b.locator('#join').click();
   await expect(a.locator('#approve')).toBeVisible(); await a.locator('#approve').click();
-  await expect(b.locator('#ready')).toBeEnabled(); await a.locator('#ready').click(); await b.locator('#ready').click();
-  await expect(a.locator('#ready')).toBeHidden(); await expect(b.locator('#ready')).toBeHidden();
+  await expect(b.locator('#ready')).toBeEnabled();
+  for (const page of [a, b]) expect(await count(page, 'start')).toBe(0);
+  if (start) {
+    await a.locator('#ready').click(); await poll(b);
+    for (const page of [a, b]) expect(await count(page, 'start')).toBe(0);
+    await b.locator('#ready').click();
+    await expect(a.locator('#ready')).toBeHidden(); await expect(b.locator('#ready')).toBeHidden();
+    for (const page of [a, b]) await expect.poll(() => count(page, 'start')).toBe(1);
+  }
   const black = await a.locator('#selfPlayer .color-dot').getAttribute('class');
   await clear(a); await clear(b);
   return { a, b, black: black!.includes('white') ? b : a, white: black!.includes('white') ? a : b, contexts, errors };
@@ -89,6 +97,98 @@ async function play(page: Page, x: number, y: number) {
   return snapshot;
 }
 test.beforeEach(() => { test.skip(!process.env.GOMOKU_LOCAL_SQL, 'Sound flows use isolated local PostgreSQL only'); });
+
+test('opening sounds once on both clients for first game and rematch; restore stays silent', async ({ browser }) => {
+  const game = await pair(browser), { a, b } = game;
+  try {
+    for (const page of [a, b]) { await poll(page); expect(await count(page, 'start')).toBe(0); }
+    await a.locator('#resign').click(); await a.locator('#confirmResign').click();
+    for (const page of [a, b]) {
+      await expect(page.locator('#resultPanel')).toBeVisible(); await clear(page);
+    }
+    await a.locator('#rematch').click(); await expect(b.locator('#acceptRematch')).toBeVisible();
+    for (const page of [a, b]) expect(await count(page, 'start')).toBe(0);
+    await b.locator('#acceptRematch').click();
+    for (const page of [a, b]) {
+      await expect(page.locator('#round')).toHaveText('02');
+      await expect.poll(() => count(page, 'start')).toBe(1);
+      await poll(page); expect(await count(page, 'start')).toBe(1);
+    }
+    await a.reload(); await expect(a.locator('#round')).toHaveText('02');
+    expect(await voices(a)).toEqual([]);
+    await a.locator('#sound').click(); await a.locator('#sound').click();
+    await a.evaluate(() => window.dispatchEvent(new Event('offline'))); await poll(a); await poll(b); await poll(a);
+    expect(await voices(a)).toEqual([]);
+    expect(game.errors).toEqual([]);
+  } finally { await Promise.all(game.contexts.map(context => context.close())); }
+});
+
+test('a slow opening receipt is consumed while the other client starts promptly', async ({ browser }) => {
+  const game = await pair(browser, false), { a, b } = game;
+  try {
+    await b.locator('#ready').click(); await poll(a);
+    await a.route('**/rpc/gomoku_command', async route => {
+      if (route.request().postDataJSON().p_action !== 'ready') return route.continue();
+      const response = await route.fetch();
+      await new Promise(resolve => setTimeout(resolve, 1800));
+      await route.fulfill({ response });
+    });
+    await a.locator('#ready').click();
+    await expect(a.locator('#ready')).toBeHidden();
+    await expect.poll(() => count(b, 'start')).toBe(1);
+    expect(await count(a, 'start')).toBe(0);
+    await poll(a); expect(await count(a, 'start')).toBe(0);
+    expect(game.errors).toEqual([]);
+  } finally { await Promise.all(game.contexts.map(context => context.close())); }
+});
+
+test('ready polling stays bounded and a muted opening is not replayed on unmute', async ({ browser }) => {
+  const game = await pair(browser, false), { a, b } = game;
+  try {
+    await a.locator('#sound').click(); await a.locator('#ready').click();
+    let polls = 0;
+    a.on('request', request => {
+      if (request.url().endsWith('/rpc/gomoku_command') && request.postDataJSON().p_action === 'snapshot') polls++;
+    });
+    await new Promise(resolve => setTimeout(resolve, 4200));
+    expect(polls).toBeGreaterThanOrEqual(3); expect(polls).toBeLessThanOrEqual(5);
+    await b.locator('#ready').click();
+    await expect(a.locator('#ready')).toBeHidden(); await expect.poll(() => count(b, 'start')).toBe(1);
+    expect(await count(a, 'start')).toBe(0);
+    polls = 0;
+    await new Promise(resolve => setTimeout(resolve, 4200)); expect(polls).toBeLessThanOrEqual(1);
+    await a.locator('#sound').click(); await poll(a); expect(await count(a, 'start')).toBe(0);
+    expect(game.errors).toEqual([]);
+  } finally { await Promise.all(game.contexts.map(context => context.close())); }
+});
+
+test('an opening with a pending download or suspended audio never plays later', async ({ context, page }) => {
+  await setup(context);
+  let release!: () => void;
+  const download = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/sounds/start.mp3', async route => { await download; await route.continue(); });
+  try {
+    await page.goto('./');
+    await page.evaluate(async () => {
+      const main = document.querySelector<HTMLScriptElement>('script[type="module"][src*="main.ts"]')!;
+      const { GameAudio: Audio } = await import(new URL('./audio.ts', main.src).href) as { GameAudio: typeof GameAudio };
+      const audio = new Audio();
+      document.querySelector<HTMLButtonElement>('#cat')!.onclick = () => { audio.unlock(); audio.play(['start']); };
+    });
+    await page.locator('#cat').click(); expect(await voices(page)).toEqual([]);
+    const response = page.waitForResponse('**/sounds/start.mp3'); release(); await response;
+    await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some(entry => entry.name.endsWith('/sounds/start.mp3')))).toBe(true);
+    await page.locator('#sound').click(); await page.locator('#sound').click();
+    expect(await count(page, 'start')).toBe(0);
+    await page.locator('#cat').click(); await expect.poll(() => count(page, 'start')).toBe(1);
+    await clear(page);
+    await page.evaluate(async () => { await Promise.all(window.soundProbe.contexts.map(context => context.suspend())); });
+    await page.evaluate(() => document.querySelector<HTMLButtonElement>('#cat')!.click());
+    expect(await voices(page)).toEqual([]);
+    await page.locator('#sound').click(); await page.locator('#sound').click();
+    expect(await count(page, 'start')).toBe(0);
+  } finally { release(); }
+});
 
 test('missing move recording does not suppress the result melody', async ({ context, page }) => {
   await setup(context);

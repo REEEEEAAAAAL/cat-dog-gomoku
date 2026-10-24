@@ -14,6 +14,67 @@ function state(extra: Partial<Snapshot> = {}): Snapshot {
 }
 
 describe('confirmed snapshot sound events', () => {
+  it('plays the first opening once on both seats after the authoritative waiting transition', () => {
+    for (const seat of [1, 2] as const) {
+      const events = new SoundEvents(), waiting = state({ seat, phase: 'waiting' });
+      expect(events.observe(waiting, true)).toEqual([]);
+      expect(events.observe({ ...waiting, version: 2, players: [{ ...player }, { ...player, ready: false }] }, true)).toEqual([]);
+      const opening = state({ seat, version: 3, players: [{ ...player, ready: false }, { ...player, ready: false }] });
+      expect(events.observe(opening, true)).toEqual(['start']);
+      expect(events.observe({ ...opening, duplicate: true }, true)).toEqual([]);
+      expect(events.observe({ ...opening, serverNow: 1000 }, true)).toEqual([]);
+    }
+  });
+  it('plays a rematch opening once without treating it as a win, undo or move', () => {
+    for (const seat of [1, 2] as const) {
+      const events = new SoundEvents(), finished = state({ seat, phase: 'finished', winner: 1, moves: [move('old')] });
+      events.observe(finished, true);
+      expect(events.observe({ ...finished, version: 2, players: [{ ...player }, { ...player, ready: false }] }, true)).toEqual([]);
+      const opening = state({ seat, version: 3, gameId: 'round-2', round: 2 });
+      expect(events.observe(opening, true)).toEqual(['start']);
+      expect(events.observe(finished, true)).toEqual([]);
+      expect(events.observe(opening, true)).toEqual([]);
+      expect(events.observe({ ...opening, version: 4, moves: [move('new')] }, true)).toEqual(['move']);
+    }
+  });
+  it('consumes muted, background or disconnected openings without later replay', () => {
+    const events = new SoundEvents(); events.observe(state({ phase: 'waiting' }), true);
+    const opening = state({ version: 2 });
+    expect(events.observe(opening, false)).toEqual([]);
+    expect(events.observe({ ...opening, serverNow: 1000 }, true)).toEqual([]);
+  });
+  it.each([
+    { phase: 'paused' as const },
+    { moves: [move('already-playing')] },
+    { serverNow: 2501 },
+    { turnDeadline: null },
+    { turnDeadline: 61000 },
+    { offlineDeadline: 300000 },
+    { players: [{ ...player, online: false }, { ...player }] as Snapshot['players'] },
+    { players: [{ ...player }, { ...player, synced: false }] as Snapshot['players'] },
+  ])('silently consumes an opening that is late or not playable: %j', extra => {
+    const events = new SoundEvents(); events.observe(state({ phase: 'waiting' }), true);
+    expect(events.observe(state({ version: 2, ...extra }), true)).not.toContain('start');
+    expect(events.observe(state({ version: 3, serverNow: 3000 }), true)).toEqual([]);
+  });
+  it('accepts a fresh opening at the age limit', () => {
+    const events = new SoundEvents(); events.observe(state({ phase: 'waiting' }), true);
+    expect(events.observe(state({ version: 2, serverNow: 2500 }), true)).toEqual(['start']);
+  });
+  it('does not turn reconnection, undo resume, room changes or skipped rounds into openings', () => {
+    for (const previous of [
+      state({ phase: 'paused' }), state(),
+      state({ phase: 'waiting', players: [{ ...player, synced: false }, { ...player }] }),
+      state({ phase: 'waiting', players: [{ ...player }, { ...player, online: false }] }),
+      state({ phase: 'waiting', room: 'another-room' }),
+      state({ phase: 'finished', gameId: 'older', round: 3 }),
+    ]) {
+      const events = new SoundEvents(); events.observe(previous, true);
+      expect(events.observe(state({ version: 2 }), true)).toEqual([]);
+    }
+    const events = new SoundEvents(); events.observe(state({ phase: 'waiting' }), true); events.reset();
+    expect(events.observe(state({ version: 2 }), true)).toEqual([]);
+  });
   it('keeps the first restored board and finished result silent', () => {
     for (const phase of ['running', 'finished'] as const) {
       const events = new SoundEvents(), restored = state({ moves: [move('old')], phase, winner: phase === 'finished' ? 1 : null });

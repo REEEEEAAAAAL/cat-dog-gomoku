@@ -40,3 +40,15 @@ mono 22.05 kHz MP3 at 64 kbps. No generated white noise.
 
 Move and undo source licenses verified on 2026-10-23.
 Victory and defeat effects are synthesized locally with Web Audio.
+
+start.mp3
+Title: jingles_STEEL10.ogg, Music Jingles 1.0
+Creator: Kenney Vleugels (Kenney.nl)
+Source: https://kenney.nl/assets/music-jingles
+Downloaded archive: https://kenney.nl/media/pages/assets/music-jingles/f37e530b9e-1677590399/kenney_music-jingles.zip
+License: CC0 1.0, verified on the official page and included License.txt on 2026-10-25.
+Free for personal and commercial use; attribution optional.
+Changes: 100 Hz high-pass and 4800 Hz low-pass filters, volume multiplied
+by 0.25, 6 ms onset fade and 90 ms tail fade;
+padded/trimmed to 0.933 seconds, mono 44.1 kHz MP3 at 64 kbps.
+Loaded locally at runtime. No changes to the other sound assets.

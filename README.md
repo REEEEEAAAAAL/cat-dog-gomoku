@@ -16,7 +16,7 @@ The hosted game uses a CloudBase trial environment with limited validity and quo
 - Negotiated undo, up to two successful uses per player per round; both players review the affected stones before approval.
 - Resignation at any time after a round starts, with confirmation and a server-persisted result; no opponent approval is needed.
 - Review the finished round on the same board with a progress slider and four controls: start, previous, next, and end. Toggle move numbers and follow the highlighted current move with player and color labels. Replay is local and independent for each player; undone moves are excluded and past rounds are not permanently archived.
-- Rematches with swapped colors, eight fixed reactions, and local sound effects with a persistent mute setting.
+- Rematches with swapped colors, eight fixed reactions, and local sound effects with a persistent mute setting. A short opening cue plays when each new game starts; restored or stale openings stay silent.
 
 There is no matchmaking, spectator mode, free-text chat, or computer opponent. An invitation grants permission to apply, not ownership of a player's seat. Returning players use the same browser session; another browser cannot take over their identity. Leaving closes the room for both players, and rooms expire after 24 hours.
 
@@ -26,7 +26,7 @@ The frontend uses strict TypeScript, Vite, native DOM/SVG, and Web Audio. CloudB
 
 - **The server decides.** Each `gomoku_command` call locks the room row, validates the player, game, version, turn, and position, and persists state before acknowledging it. Browsers cannot directly read or write the game table. A preview becomes a stone only after confirmation from the server.
 - **Retries preserve intent.** Operation IDs and stored receipts prevent duplicate moves after a lost response. An uncertain result remains visible for retry and reconciliation. Refresh restores the session, and a new tab takes over that browser's seat.
-- **Polling keeps deployment simple.** Active, visible pages poll every five seconds, so partner updates can take one polling interval. Hidden pages stop polling; waiting and finished pages also rest after two minutes without interaction. A 15-second heartbeat lease tolerates brief interruptions before pausing play.
+- **Polling keeps deployment simple.** Active, visible pages normally poll every five seconds. A player who is ready and waiting for a new game polls about once per second until it starts. Partner updates can take one polling interval. Hidden pages stop polling; waiting and finished pages also rest after two minutes without interaction. A 15-second heartbeat lease tolerates brief interruptions before pausing play.
 - **Time survives reconnects.** PostgreSQL stores deadlines and remaining time. Both players must reconnect and acknowledge synchronization to resume. Expired timers are settled by the next RPC, including when both players have been absent; there is no background scheduler.
 
 The game uses HTTP polling rather than PostgreSQL Realtime. An earlier Cloudflare Workers/SQLite Durable Objects candidate remains in the repository as historical source, separate from the active deployment.

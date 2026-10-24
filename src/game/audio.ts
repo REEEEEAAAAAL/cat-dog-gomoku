@@ -1,7 +1,7 @@
 import type { GameSound } from './sound-events';
 
 type Animal = 'cat' | 'dog';
-type Sample = Animal | 'move' | 'undo';
+type Sample = Animal | 'start' | 'move' | 'undo';
 type Source = AudioBufferSourceNode | OscillatorNode;
 const storageKey = 'gomoku.sound';
 const melodies = { win: [523.25, 659.25, 783.99, 1046.5], lose: [659.25, 587.33, 523.25, 392] };
@@ -57,6 +57,7 @@ export class GameAudio {
       void this.load('dog').catch(error => this.unavailable(error));
       void this.load('move').catch(error => this.unavailable(error));
       void this.load('undo').catch(error => this.unavailable(error));
+      void this.load('start').catch(error => this.unavailable(error));
     } catch (error) { this.unavailable(error); }
   }
 
@@ -106,6 +107,9 @@ export class GameAudio {
 
   play(sounds: readonly GameSound[]) {
     if (!sounds.length || !this.enabled || document.hidden || this.context?.state !== 'running') return;
+    // A missed opening cue is consumed without waiting for a download or later gesture.
+    sounds = sounds.filter(sound => sound !== 'start' || this.decoded.has('start'));
+    if (!sounds.length) return;
     const missing = sounds.filter((sound): sound is 'move' | 'undo' => (sound === 'move' || sound === 'undo') && !this.decoded.has(sound));
     if (missing.length) {
       const generation = this.generation, requested = performance.now();
@@ -121,9 +125,12 @@ export class GameAudio {
     }
     try {
       const context = this.context;
+      if (sounds.includes('start')) this.stop();
       let at = Math.max(context.currentTime + .012, this.tail);
       for (const sound of sounds) {
-        if (sound === 'move') {
+        if (sound === 'start') {
+          this.sample('start', at);
+        } else if (sound === 'move') {
           at += this.sample('move', at) + .025;
         } else if (sound === 'undo') {
           at += this.sample('undo', at) + .025;
@@ -158,7 +165,7 @@ export class GameAudio {
     source.start(at); source.stop(at + duration + .01);
   }
 
-  private sample(sound: 'move' | 'undo', at: number) {
+  private sample(sound: 'start' | 'move' | 'undo', at: number) {
     const source = this.context!.createBufferSource(), buffer = this.decoded.get(sound)!;
     source.buffer = buffer; source.connect(this.master!);
     this.track(source, []); source.start(at);
