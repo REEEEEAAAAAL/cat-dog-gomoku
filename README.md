@@ -55,6 +55,8 @@ npm run dev
 
 This requires a PostgreSQL environment with anonymous login, an allowed web origin, and the migrations below. The current client configures the Shanghai region. Vite variables are embedded in the browser bundle: use only a frontend publishable key, never management credentials.
 
+The game layout responds to the available width and height. Wide windows place both player cards and the timer beside the board; medium windows place the cards together above it. Short windows use a compact header. The round and room code stay above the board, with replay and collapsible rules below it. Wide layouts keep reactions with the four game actions and show the illustration only when enough space remains. Narrow screens retain their player placement and touch preview flow.
+
 ## Tests and builds
 
 ```sh
@@ -74,7 +76,7 @@ npm run test:game-page
 Remove-Item Env:GOMOKU_LOCAL_SQL
 ```
 
-On macOS/Linux, use `GOMOKU_LOCAL_SQL=1 GOMOKU_BROWSER=chrome npm run test:game-page`. Local game tests block CloudBase requests and cover two-player play, lost acknowledgements, refresh, undo, invitations, audio, and responsive controls. They do not validate cloud authentication or physical mobile devices. Screenshots and failures go to the ignored `test-results/` directory.
+On macOS/Linux, use `GOMOKU_LOCAL_SQL=1 GOMOKU_BROWSER=chrome npm run test:game-page`. Local game tests block CloudBase requests and cover two-player play, lost acknowledgements, refresh, undo, invitations, audio, and responsive controls. They do not validate cloud authentication or physical mobile devices. Screenshots and failures go to the ignored `test-results/` directory. `tests/game-e2e/layout.spec.ts` uses controlled snapshots to check viewports, state changes, button visibility, and layout stability; these checks do not replace two-client SQL regression tests, physical-device testing, or actual browser zoom acceptance.
 
 Live tests are opt-in and create rooms and anonymous sessions in the chosen environment. Set `GOMOKU_URL` to its full `/gomoku/` URL, or set `GOMOKU_LIVE_LOCAL=1` to use a built local preview with your configured backend. Clear `GOMOKU_LOCAL_SQL` first. `GOMOKU_LONG_TEST=1` additionally enables the five-minute absence case. `npm run test:cloudbase-page` checks the separate diagnostic page; its public tests require `CLOUDBASE_DIAGNOSTIC_URL`.
 

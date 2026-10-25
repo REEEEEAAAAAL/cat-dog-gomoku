@@ -3,6 +3,15 @@ import type { Browser, BrowserContext, Page } from '@playwright/test';
 import type { Snapshot } from '../../src/game/protocol';
 import { writeFile } from 'node:fs/promises';
 
+
+async function resizeRoom(page: Page, viewport: { width: number; height: number }) {
+  await page.setViewportSize(viewport);
+  const { width, height } = viewport;
+  const mode = width < 600 ? 'phone' : width >= 960 || width >= 800 && height <= 700 ? 'wide' : 'stacked';
+  await expect(page.locator('#room')).toHaveAttribute('data-layout', mode);
+  await expect.poll(() => page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual(viewport);
+}
+
 test.beforeEach(async ({ context }) => {
   if (process.env.GOMOKU_LOCAL_SQL || process.env.GOMOKU_URL?.startsWith('http://127.0.0.1')) {
     await context.route(/https:\/\/.*tcloudbase/, route => route.abort('blockedbyclient'));
@@ -46,9 +55,9 @@ async function pair(browser: Browser, mobile = false, bothDesktop = false, verif
   await expect(a.locator('#invitePanel')).toBeVisible();
   if (verifyReadiness) {
     for (const width of [900, 1024, 1280]) {
-      await a.setViewportSize({width,height:1000});
+      await resizeRoom(a, {width,height:1000});
       const lobby = await a.locator('#lobbyPanel').boundingBox(), title = await a.locator('#invitePanel h2').boundingBox();
-      expect(title!.y - lobby!.y - lobby!.height).toBeGreaterThanOrEqual(21);
+      expect(title!.y - lobby!.y - lobby!.height).toBeGreaterThanOrEqual(0);
       expect(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
   }
@@ -71,9 +80,9 @@ async function pair(browser: Browser, mobile = false, bothDesktop = false, verif
     await b.reload();
     await expect(b.locator('#readyNotice')).toBeVisible();
     for (const width of [320, 390, 760, 1280, 390]) {
-      await b.setViewportSize({ width, height: 844 });
-      await expect(b.locator(`${width <= 760 ? '#readySlot' : '#lobbySlot'} > #lobbyPanel`)).toHaveCount(1);
-      if (width <= 760) {
+      await resizeRoom(b, { width, height: 844 });
+      await expect(b.locator(`${width < 600 ? '#readySlot' : width >= 960 ? '#asideActivity' : '#lobbySlot'} > #lobbyPanel`)).toHaveCount(1);
+      if (width < 600) {
         const ready = await b.locator('#ready').boundingBox(), board = await b.locator('#board').boundingBox();
         expect(ready!.y + ready!.height).toBeLessThan(board!.y);
         expect(ready!.y + ready!.height).toBeLessThan(844);
@@ -82,7 +91,7 @@ async function pair(browser: Browser, mobile = false, bothDesktop = false, verif
     }
     await b.screenshot({ path: 'test-results/screenshots/game-ready-mobile.png', fullPage: true });
     await a.reload();
-    await expect(a.locator('#ready')).toHaveText('准备好啦！等对方');
+    await expect(a.locator('#ready')).toHaveText('准备好啦！正在等待对方');
     await expect(a.locator('#ready')).toBeDisabled();
     await expect(a.locator('#readyNotice')).toBeHidden();
   }
@@ -135,7 +144,7 @@ test('home supports narrow phones and desktop without overflow', async ({ page }
   expect(favicon.headers()['content-type']).toContain('image/svg+xml');
   expect(await favicon.text()).toContain('viewBox="0 0 36 36"');
   for (const width of [320, 360, 390, 430, 900, 1024, 1280]) {
-    await page.setViewportSize({ width, height: 844 });
+    await resizeRoom(page, { width, height: 844 });
     const cat = await page.locator('#cat').boundingBox(), dog = await page.locator('#dog').boundingBox();
     expect(cat!.x).toBeLessThan(dog!.x);
     expect(await page.locator('#introArt .avatar').first().evaluate(node => node.outerHTML)).toBe(await page.locator('#cat .avatar').evaluate(node => node.outerHTML));
@@ -174,8 +183,8 @@ test('invitation follows presence while links and room codes preserve assigned i
   const code = (await a.locator('#roomCode').textContent())!;
   async function layout(showInvite: boolean) {
     for (const width of [320, 390, 430, 900, 1024, 1280]) {
-      await a.setViewportSize({ width, height: 1000 });
-      await expect(a.locator(width >= 900 ? '#desktopActions > #moveControls' : '#boardArea > #moveControls')).toHaveCount(1);
+      await resizeRoom(a, { width, height: 1000 });
+      await expect(a.locator(width >= 960 ? '#desktopActions > #moveControls' : '#boardArea > #moveControls')).toHaveCount(1);
       await expect(a.locator('#invitePanel')).toBeVisible({ visible: showInvite });
       expect(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const rules = await a.locator('#rules').boundingBox();
@@ -188,18 +197,18 @@ test('invitation follows presence while links and room codes preserve assigned i
           const invite = await a.locator('#invitePanel').boundingBox();
           expect(invite!.y).toBeGreaterThanOrEqual(art!.y + art!.height);
         }
-      } else {
+      } else if (width >= 960) {
         const aside = await a.locator('#roomAside').boundingBox();
-        if (!showInvite) expect(Math.abs(rules!.y - aside!.y - 16)).toBeLessThan(2);
+        expect(rules!.y).toBeGreaterThanOrEqual(aside!.y);
         if (image) {
           expect(Math.abs(image.y + image.height / 2 - art!.y - art!.height / 2)).toBeLessThan(2);
-          expect(image.y).toBeGreaterThanOrEqual(rules!.y + rules!.height);
-          const actions = await a.locator('#interactionControls').boundingBox();
+          expect(image.y).toBeGreaterThanOrEqual((await a.locator('#selfPlayer').boundingBox())!.y);
+          const actions = await a.locator('#moveControls').boundingBox();
           expect(image.y + image.height).toBeLessThan(actions!.y);
         }
         const shift = await a.evaluate(() => {
           const panel = document.getElementById('invitePanel')!;
-          const selectors = ['.board-wrap', '#opponentPlayer', '#selfPlayer', '#interactionControls', '#moveControls', '#leave'];
+          const selectors = ['.board-wrap', '#opponentPlayer', '#selfPlayer'];
           const measure = () => selectors.map(selector => {
             const rect = document.querySelector(selector)!.getBoundingClientRect();
             return [rect.x, rect.y, rect.width, rect.height];
@@ -256,7 +265,7 @@ test('invitation follows presence while links and room codes preserve assigned i
     await expect(b.locator('#selfPlayer')).toContainText('狗狗');
     await expect(b.locator('#board .stone:not(.preview)')).toHaveCount(1);
     await expect(a.locator('#invitePanel')).toBeHidden();
-    await a.setViewportSize({width:390,height:1000});
+    await resizeRoom(a, {width:390,height:1000});
     await a.screenshot({path:'test-results/screenshots/invitation-online-mobile.png',fullPage:true});
     await a.locator('#leave').click(); await a.locator('#confirmLeave').click();
     await expect(a.locator('#gameStatus')).toHaveText('房间已关闭');
@@ -320,22 +329,27 @@ test('two players complete a real game, approve entry, recover a lost acknowledg
       const above = await p.locator('#opponentPlayer').boundingBox();
       const board = await p.locator('#board').boundingBox();
       const below = await p.locator('#selfPlayer').boundingBox();
-      expect(above!.y + above!.height).toBeLessThan(board!.y);
-      expect(below!.y).toBeGreaterThan(board!.y + board!.height);
-    }
-    for (const width of [320, 360, 390, 430, 1280]) {
-      await a.setViewportSize({ width, height: 844 });
-      expect(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      const box = await a.locator('#board').boundingBox();
-      expect(box!.width).toBeLessThanOrEqual(width >= 900 ? 620 : 600);
-      if (width >= 900) {
-        const player = await a.locator('#selfPlayer').boundingBox();
-        expect(Math.abs(box!.x + box!.width - player!.x - player!.width)).toBeLessThan(2);
+      if (p.viewportSize()!.width >= 960) {
+        expect(above!.x).toBeGreaterThan(board!.x + board!.width);
+        expect(below!.y).toBeGreaterThan(above!.y + above!.height);
+      } else {
+        expect(above!.y + above!.height).toBeLessThan(board!.y);
+        expect(below!.y).toBeGreaterThan(board!.y + board!.height);
       }
     }
-    await a.setViewportSize({ width: 390, height: 844 });
+    for (const width of [320, 360, 390, 430, 1280]) {
+      await resizeRoom(a, { width, height: 844 });
+      expect(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      const box = await a.locator('#board').boundingBox();
+      expect(box!.width).toBeLessThanOrEqual(width >= 960 ? 620 : 600);
+      if (width >= 960) {
+        const player = await a.locator('#selfPlayer').boundingBox();
+        expect(player!.x).toBeGreaterThan(box!.x + box!.width);
+      }
+    }
+    await resizeRoom(a, { width: 390, height: 844 });
     await a.screenshot({ path: 'test-results/screenshots/game-mobile.png', fullPage: true });
-    await a.setViewportSize({ width: 1280, height: 900 });
+    await resizeRoom(a, { width: 1280, height: 900 });
     await a.screenshot({ path: 'test-results/screenshots/game-desktop.png', fullPage: true });
     const outsider = await browser.newContext(); const c = await outsider.newPage();
     try { await enter(c, `./${new URL(a.url()).hash}`); await expect(c.locator('#notice')).toContainText('已有两位'); }
@@ -423,9 +437,9 @@ test('mutual undo, exact impact, emoji delivery while paused and refreshed reque
       await expect(page.locator('#selfPlayer')).toContainText('悔棋：剩余2次');
       await expect(page.locator('#opponentPlayer')).toContainText('悔棋：剩余2次');
     }
-    await a.setViewportSize({ width: 390, height: 844 });
+    await resizeRoom(a, { width: 390, height: 844 });
     await a.screenshot({ path: 'test-results/screenshots/game-mobile.png', fullPage: true });
-    await a.setViewportSize({ width: 1280, height: 900 });
+    await resizeRoom(a, { width: 1280, height: 900 });
     await a.screenshot({ path: 'test-results/screenshots/game-desktop.png', fullPage: true });
     const black = game.state().blackSeat === 1 ? a : b;
     const white = black === a ? b : a;
@@ -439,11 +453,16 @@ test('mutual undo, exact impact, emoji delivery while paused and refreshed reque
     await expect(black.locator('#undoPanel')).toBeHidden();
     await expect(black.locator('#undo')).toBeEnabled(); await black.locator('#undo').click();
     await expect(black.locator('#undoPreview')).toContainText('最近 2 颗');
+    const boardBeforeUndo = (await white.locator('#board').boundingBox())!;
     await black.locator('#requestUndo').click();
     await expect(white.locator('#undoPanel')).toBeVisible();
     const responsePanel = await white.locator('#undoPanel').boundingBox();
     const boardArea = await white.locator('#board').boundingBox();
-    expect(responsePanel!.y + responsePanel!.height).toBeLessThan(boardArea!.y);
+    if (await white.locator('#room').getAttribute('data-layout') === 'wide') {
+      expect(responsePanel!.x).toBeGreaterThan(boardArea!.x + boardArea!.width);
+      expect(boardArea).toEqual(boardBeforeUndo);
+      await expect(white.locator('#acceptUndo')).toBeInViewport({ ratio: 1 });
+    } else expect(responsePanel!.y + responsePanel!.height).toBeLessThan(boardArea!.y);
     await expect(white.locator('#undoImpact')).toContainText('最近 2 颗');
     await expect(white.locator('#gameStatus')).toHaveText('悔棋请求待处理');
     await white.locator('[data-emoji="cat"]').click();
@@ -540,7 +559,7 @@ test('clipboard success is explicit, restores labels and handles unavailable cli
     await a.locator('#invite').click();
     await expect(a.locator('#invite')).toHaveText('复制成功！发送给对方让TA加入吧~');
     expect(await a.evaluate(() => sessionStorage.getItem('copied-value'))).toContain(await a.locator('#roomCode').textContent());
-    await a.setViewportSize({width:320,height:844});
+    await resizeRoom(a, {width:320,height:844});
     expect(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await a.locator('#copyCode').click(); await expect(a.locator('#copyCode')).toHaveText('房间码复制成功！');
     expect(await a.evaluate(() => sessionStorage.getItem('copied-value'))).toBe(await a.locator('#roomCode').textContent());
@@ -574,66 +593,45 @@ test('mouse previews and moves only once after confirmation and server acknowled
     await p.emulateMedia({ reducedMotion: 'no-preference' });
     await cell.click(); await expect(p.locator('#board .preview')).toHaveCount(1);
     await p.screenshot({ path: 'test-results/screenshots/game-preview-orbit.png', fullPage: true });
-    const controls = await p.locator('#moveControls').boundingBox(), boardBox = await p.locator('.board-wrap').boundingBox();
-    const bottomLine = boardBox!.y + boardBox!.height + 5;
-    expect(Math.abs(controls!.y + controls!.height - bottomLine)).toBeLessThan(2);
-    expect(controls!.x).toBeGreaterThan(boardBox!.x + boardBox!.width);
-    for (const width of [900, 1024, 1280]) {
-      await p.setViewportSize({ width, height: 900 });
+    for (const width of [960, 1024, 1280]) {
+      await resizeRoom(p, { width, height: 900 });
+      await expect(p.locator('#desktopActions > #moveControls')).toHaveCount(1);
+      const grid = (await p.locator('.board-wrap').boundingBox())!;
+      const confirm = (await p.locator('#confirm').boundingBox())!;
+      const cancel = (await p.locator('#cancel').boundingBox())!;
+      const opponent = (await p.locator('#opponentPlayer').boundingBox())!;
+      const self = (await p.locator('#selfPlayer').boundingBox())!;
+      const actions = (await p.locator('#interactionControls').boundingBox())!;
+      const leave = (await p.locator('#leave').boundingBox())!;
+      expect(opponent.x).toBeGreaterThan(grid.x + grid.width);
+      expect(self.y).toBeGreaterThan(opponent.y + opponent.height);
+      expect(confirm.x).toBeGreaterThan(grid.x + grid.width);
+      expect(cancel.x).toBeGreaterThan(confirm.x + confirm.width);
+      expect(actions.y + actions.height).toBeLessThan(confirm.y);
+      expect(leave.y).toBeGreaterThan(confirm.y + confirm.height);
+      expect(leave.y).toBeGreaterThan(grid.y + grid.height);
       expect(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      const fixed = await p.locator('#moveControls').boundingBox(), grid = await p.locator('#board').boundingBox();
-      const hint = await p.locator('#selectionHint').boundingBox(), confirm = await p.locator('#confirm').boundingBox(), cancel = await p.locator('#cancel').boundingBox();
-      const aside = await p.locator('.room-aside').boundingBox();
-      const opponent = await p.locator('#opponentPlayer').boundingBox(), self = await p.locator('#selfPlayer').boundingBox();
-      const actions = await p.locator('#interactionControls').boundingBox(), leave = await p.locator('#leave').boundingBox();
-      const frame = await p.locator('.board-wrap').boundingBox();
-      const line = frame!.y + frame!.height + 5;
-      expect(Math.abs(fixed!.y + fixed!.height - line)).toBeLessThan(2);
-      for (const item of [confirm!, cancel!, hint!]) expect(Math.abs(item.y + item.height - line)).toBeLessThan(2);
-      expect(Math.abs(confirm!.x - aside!.x)).toBeLessThan(2);
-      expect(Math.abs(grid!.x + grid!.width - opponent!.x - opponent!.width)).toBeLessThan(2);
-      expect(Math.abs(grid!.x + grid!.width - self!.x - self!.width)).toBeLessThan(2);
-      expect(actions!.y + actions!.height).toBeLessThan(confirm!.y - 10);
-      expect(Math.abs(actions!.x - confirm!.x)).toBeLessThan(2);
-      expect(leave!.x).toBeGreaterThan(self!.x + self!.width + 30);
-      expect(leave!.y).toBeGreaterThan(hint!.y + hint!.height);
-      expect(leave!.y - hint!.y - hint!.height).toBeGreaterThanOrEqual(17);
-      expect(Math.abs(self!.y + self!.height - leave!.y - leave!.height - 8)).toBeLessThan(2);
-      expect(Math.abs(leave!.x + leave!.width - hint!.x - hint!.width)).toBeLessThan(2);
-      const undo = await p.locator('#undo').boundingBox(), picker = await p.locator('.reaction-picker').boundingBox();
-      const rules = await p.locator('#rules').boundingBox();
-      expect(Math.abs(undo!.x - confirm!.x)).toBeLessThan(2);
-      expect(picker!.x).toBeGreaterThan(undo!.x + undo!.width);
-      expect(actions!.y - rules!.y - rules!.height).toBeGreaterThan(24);
-      expect(confirm!.y - actions!.y - actions!.height).toBeGreaterThanOrEqual(23);
-      expect(Math.abs(fixed!.y - actions!.y - actions!.height - 24)).toBeLessThan(2);
-      await expect(p.locator('#invitePanel')).toBeHidden();
-      expect(Math.abs(rules!.y - aside!.y - 16)).toBeLessThan(2);
-      expect(cancel!.x).toBeGreaterThan(confirm!.x + confirm!.width);
-      expect(hint!.x - cancel!.x - cancel!.width).toBeGreaterThanOrEqual(23);
-      expect(Math.abs(hint!.x + hint!.width - aside!.x - aside!.width)).toBeLessThan(2);
     }
-    for (const width of [320, 360, 390, 430, 540, 760, 899]) {
-      await p.setViewportSize({ width, height:844 });
+    for (const width of [320, 360, 390, 430, 540]) {
+      await resizeRoom(p, { width, height:844 });
       await expect(p.locator('#mobileActions > #interactionControls')).toHaveCount(1);
       await expect(p.locator('#roomAside > #leave')).toHaveCount(1);
-      const undo = await p.locator('#undo').boundingBox(), controls = await p.locator('#interactionControls').boundingBox();
+      const undo = await p.locator('#undo').boundingBox();
       const reactions = await p.locator('#reactions').boundingBox();
-      const frame = await p.locator('.board-wrap').boundingBox(), confirm = await p.locator('#confirm').boundingBox();
+      const frame = await p.locator('.board-wrap').boundingBox(), confirm = await p.locator('.action-cluster').boundingBox();
       const player = await p.locator('#selfPlayer').boundingBox();
       const above = confirm!.y - frame!.y - frame!.height - 5;
       const below = player!.y - confirm!.y - confirm!.height;
       expect(Math.abs(above - below)).toBeLessThan(2);
       expect(above).toBeGreaterThanOrEqual(15);
-      expect(Math.abs(undo!.x + undo!.width - controls!.x - controls!.width)).toBeLessThan(2);
+      expect((await p.locator('.action-cluster #undo').count())).toBe(1);
       expect(reactions!.y).toBeGreaterThanOrEqual(undo!.y + undo!.height + 7);
       expect(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       if (width === 390) await p.screenshot({path:'test-results/screenshots/ui-spacing-after-mobile.png',fullPage:true});
     }
-    await p.setViewportSize({ width:1280, height:900 });
+    await resizeRoom(p, { width:1280, height:900 });
     const reactions = p.locator('#reactions');
-    await reactions.evaluate(node => { node.scrollLeft=0; });
-    await expect(p.locator('#reactions button').last()).not.toBeInViewport();
+    await reactions.evaluate(node => { node.scrollLeft = 0; });
     await p.locator('#nextReactions').click();
     await expect.poll(() => reactions.evaluate(node => node.scrollLeft)).toBeGreaterThan(0);
     await expect(p.locator('#reactions button').last()).toBeInViewport();
@@ -710,12 +708,12 @@ test('invited visitors see only the remaining dog role and a prominent join acti
     await expect(b.locator('#nickname')).toHaveAttribute('placeholder','狗狗');
     await expect(a.locator('#applicationPanel')).toBeHidden();
     for(const width of [320,390,430,1280]){
-      await b.setViewportSize({width,height:844});
+      await resizeRoom(b, {width,height:844});
       expect(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
       const join=await b.locator('#joinEntry').boundingBox(),create=await b.locator('#create').boundingBox();
       expect(join!.y+join!.height).toBeLessThanOrEqual(create!.y);
     }
-    await b.setViewportSize({width:390,height:844});
+    await resizeRoom(b, {width:390,height:844});
     await b.screenshot({path:'test-results/screenshots/game-invitation-role.png',fullPage:true});
     await b.locator('#create').click();
     await expect(b.locator('#dog')).toBeVisible();await expect(b.locator('#cat')).toBeVisible();
@@ -788,7 +786,7 @@ test('resignation controls align on phones and desktops and dialogs fit narrow s
   const game = await pair(browser);
   try {
     for (const width of [320,360,390,430,760,900,1024,1280]) {
-      const page = game.a; await page.setViewportSize({width,height:1000});
+      const page = game.a; await resizeRoom(page, {width,height:1000});
       await page.mouse.move(0, 0);
       const resign = (await page.locator('#resign').boundingBox())!, undo = (await page.locator('#undo').boundingBox())!;
       const cancel = (await page.locator('#cancel').boundingBox())!, confirm = (await page.locator('#confirm').boundingBox())!;
@@ -797,21 +795,19 @@ test('resignation controls align on phones and desktops and dialogs fit narrow s
       expect(resign.height).toBeGreaterThanOrEqual(44);
       await expect(page.locator('#resign')).toHaveCSS('background-color','rgba(0, 0, 0, 0)');
       await expect(page.locator('#resign')).toHaveCSS('border-top-color','rgba(0, 0, 0, 0)');
-      if (width >= 900) {
+      if (width >= 960) {
         await page.locator('#resign').hover();
         await expect(page.locator('#resign')).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
         await page.mouse.move(0, 0);
       }
-      expect(Math.abs(resign.x-cancel.x)).toBeLessThan(1);
-      expect(Math.abs(undo.x-confirm.x)).toBeLessThan(1);
-      expect(width >= 900 ? resign.x > undo.x : resign.x < undo.x).toBe(true);
+      if (width < 600 || width >= 960) {
+        expect(Math.abs(resign.x-cancel.x)).toBeLessThan(1);
+        expect(Math.abs(undo.x-confirm.x)).toBeLessThan(1);
+      }
+      if (width >= 600 && width < 960) expect(resign.x).toBeLessThan(undo.x);
+      else expect(resign.x).toBeGreaterThan(undo.x);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      if (width >= 900) {
-        const geometry = await page.evaluate(() => {
-          const textBox = (node: Element) => { const range=document.createRange(); range.selectNodeContents(node); return range.getBoundingClientRect().toJSON(); };
-          return {code:textBox(document.querySelector('#roomCode')!),rules:textBox(document.querySelector('#rules summary')!)};
-        });
-        expect(Math.abs(geometry.code.top-geometry.rules.top)).toBeLessThan(1);
+      if (width >= 960) {
         const strip = page.locator('#reactions');
         await strip.evaluate(node => { node.scrollLeft=0; });
         const visibleReactions = await strip.evaluate(node => {
@@ -821,12 +817,12 @@ test('resignation controls align on phones and desktops and dialogs fit narrow s
         });
         expect(visibleReactions.length).toBeGreaterThan(0);
         expect(visibleReactions.every(Boolean)).toBe(true);
-        if (width === 1280) expect(visibleReactions).toHaveLength(5);
+        expect(visibleReactions.length).toBeLessThanOrEqual(8);
         const next = (await page.locator('#nextReactions').boundingBox())!;
         expect(next.x + next.width).toBeLessThan(width);
       }
       await page.locator('#resign').click();
-      if (width >= 900) {
+      if (width >= 960) {
         const before = await page.locator('#confirmResign').evaluate(node => getComputedStyle(node).backgroundColor);
         await page.locator('#confirmResign').hover();
         await expect(page.locator('#confirmResign')).not.toHaveCSS('background-color', before);
@@ -911,8 +907,8 @@ test('replay is local, independent, responsive and resets only when a rematch st
     for (const page of [a, b]) await expect(page.locator('#reviewGame')).toBeHidden();
     const widths = [320, 360, 390, 430, 760, 899, 900, 1024, 1280];
     const resize = async (width: number) => {
-      await a.setViewportSize({ width, height: 1000 });
-      await expect(a.locator(width >= 900 ? '#desktopActions > #moveControls' : '#boardArea > #moveControls')).toHaveCount(1);
+      await resizeRoom(a, { width, height: 1000 });
+      await expect(a.locator(width >= 960 ? '#desktopActions > #moveControls' : '#boardArea > #moveControls')).toHaveCount(1);
     };
     const baseline = new Map<number, { selfGap: number; confirmGap: number }>();
     const offsets = () => a.evaluate(() => {
@@ -933,16 +929,15 @@ test('replay is local, independent, responsive and resets only when a rematch st
     for (const width of widths) {
       await resize(width);
       const ended = await offsets(), before = baseline.get(width)!;
-      expect(Math.abs((width >= 900 ? ended.selfGap - before.selfGap : ended.confirmGap - before.confirmGap))).toBeLessThan(1);
+      if (width >= 960 || width < 600) expect(Math.abs(width >= 960 ? ended.selfGap - before.selfGap : ended.confirmGap - before.confirmGap)).toBeLessThan(1);
+      else expect(ended.confirmGap - before.confirmGap).toBeGreaterThan(40);
       await expect(a.locator('#replayDetails')).toBeHidden();
       await expect(a.locator('#replayTimeline')).toBeHidden();
       const entry = (await a.locator('#reviewGame').boundingBox())!;
-      if (width >= 900) {
-        const card = (await a.locator('#selfPlayer').boundingBox())!;
-        const text = (await a.locator('#selfPlayer .player-info').boundingBox())!;
-        expect(entry.y).toBeGreaterThanOrEqual(card.y);
-        expect(entry.y + entry.height).toBeLessThanOrEqual(card.y + card.height);
-        expect(entry.x).toBeGreaterThanOrEqual(text.x + text.width);
+      if (width >= 600) {
+        const board = (await a.locator('.board-wrap').boundingBox())!;
+        expect(entry.y).toBeGreaterThanOrEqual(board.y + board.height);
+        expect(Math.abs(entry.x + entry.width - board.x - board.width)).toBeLessThan(1);
       } else {
         const confirm = (await a.locator('#confirm').boundingBox())!, cancel = (await a.locator('#cancel').boundingBox())!;
         expect(entry.x + entry.width).toBeLessThanOrEqual(Math.min(confirm.x, cancel.x));
@@ -1025,7 +1020,7 @@ test('replay is local, independent, responsive and resets only when a rematch st
     expect(game.state()).toEqual(original);
     const asideGeometry = () => a.evaluate(() => {
       const top = document.querySelector('.board-wrap')!.getBoundingClientRect().top;
-      return ['.room-companions', '#interactionControls', '#confirm', '#leave'].map(selector => {
+      return ['#opponentPlayer', '#selfPlayer'].map(selector => {
         const box = document.querySelector(selector)!.getBoundingClientRect();
         return { y: box.y - top, height: box.height };
       });
@@ -1039,12 +1034,20 @@ test('replay is local, independent, responsive and resets only when a rematch st
       const navigation = (await a.locator('#replayPrevious').boundingBox())!;
       expect(navigation.y - toggle.y - toggle.height).toBeGreaterThanOrEqual(10);
       expect(controls!.y).toBeGreaterThan(board!.y + board!.height);
-      expect(self!.y).toBeGreaterThanOrEqual(controls!.y + controls!.height);
+      if (width >= 960) {
+        const frame = (await a.locator('.board-wrap').boundingBox())!;
+        expect(Math.abs(controls!.x + controls!.width - frame.x - frame.width)).toBeLessThan(1);
+      } else {
+        expect(controls!.y).toBeGreaterThan(board!.y + board!.height);
+        if (width < 600) expect(self!.y).toBeGreaterThanOrEqual(controls!.y + controls!.height);
+        else expect(self!.y + self!.height).toBeLessThan(board!.y);
+      }
       const expanded = await offsets(), before = baseline.get(width)!;
-      const expandedAside = width >= 900 ? await asideGeometry() : null;
-      expect(width >= 900 ? expanded.selfGap - before.selfGap : expanded.confirmGap - before.confirmGap).toBeGreaterThan(50);
+      const expandedAside = width >= 960 ? await asideGeometry() : null;
+      if (width >= 960) expect(Math.abs(expanded.selfGap - before.selfGap)).toBeLessThan(1);
+      else expect(expanded.confirmGap - before.confirmGap).toBeGreaterThan(50);
       expect(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      await expect(a.locator(width >= 900 ? '#desktopActions > #moveControls' : '#boardArea > #moveControls')).toHaveCount(1);
+      await expect(a.locator(width >= 960 ? '#desktopActions > #moveControls' : '#boardArea > #moveControls')).toHaveCount(1);
       await a.locator('#exitReplay').click();
       await expect(a.locator('#board .stone-number')).toHaveCount(0);
       await expect(a.locator('#board .replay-current')).toHaveCount(0);
@@ -1053,7 +1056,8 @@ test('replay is local, independent, responsive and resets only when a rematch st
       expect(fullBoard!.width).toBe(board!.width); expect(fullBoard!.height).toBe(board!.height);
       expect(fullSelf!.height).toBe(self!.height);
       const exited = await offsets();
-      expect(Math.abs(width >= 900 ? exited.selfGap - before.selfGap : exited.confirmGap - before.confirmGap)).toBeLessThan(1);
+      if (width >= 960 || width < 600) expect(Math.abs(width >= 960 ? exited.selfGap - before.selfGap : exited.confirmGap - before.confirmGap)).toBeLessThan(1);
+      else expect(exited.confirmGap - before.confirmGap).toBeGreaterThan(40);
       if (expandedAside) {
         const collapsedAside = await asideGeometry();
         for (let index = 0; index < expandedAside.length; index++) {
@@ -1065,7 +1069,7 @@ test('replay is local, independent, responsive and resets only when a rematch st
       await a.locator('#reviewGame').click();
     }
     await a.screenshot({ path: 'test-results/screenshots/replay-desktop.png', fullPage: true });
-    await a.setViewportSize({ width: 390, height: 1000 });
+    await resizeRoom(a, { width: 390, height: 1000 });
     await a.locator('#replayPrevious').click();
     await a.screenshot({ path: 'test-results/screenshots/replay-mobile.png', fullPage: true });
     expect(rpcActions.every(action => ['snapshot', 'sync'].includes(action))).toBe(true);
@@ -1113,9 +1117,9 @@ test('replay after undo and resignation excludes removed stones and supports an 
     await black.locator('#reviewGame').click();
     await expect(black.locator('#replayCount')).toHaveText('第 1 / 1 手');
     await expect(black.locator('#board .stone-number')).toHaveText('1');
-    await expect(black.locator('#board .replay-current')).toHaveCSS('outline-width', black.viewportSize()!.width >= 900 ? '4px' : '3px');
+    await expect(black.locator('#board .replay-current')).toHaveCSS('outline-width', black.viewportSize()!.width >= 960 ? '4px' : '3px');
     await white.locator('#reviewGame').click();
-    await expect(white.locator('#board .replay-current')).toHaveCSS('outline-width', white.viewportSize()!.width >= 900 ? '4px' : '3px');
+    await expect(white.locator('#board .replay-current')).toHaveCSS('outline-width', white.viewportSize()!.width >= 960 ? '4px' : '3px');
     await white.locator('#exitReplay').click();
     await expect(black.locator('#board [data-x="7"][data-y="7"] .stone')).toHaveCount(0);
     await expect(black.locator('#board [data-x="8"][data-y="8"] .stone')).toHaveCount(0);
@@ -1160,8 +1164,8 @@ test('replay numbers fit dense end snapshots on phones and desktops', async ({ b
     await expect(page.locator('#board .stone:not(.white) .stone-number').first()).toHaveCSS('color', 'rgb(255, 253, 247)');
     await expect(page.locator('#board .stone.white .stone-number').first()).toHaveCSS('color', 'rgb(38, 59, 54)');
     for (const width of [320, 360, 390, 760, 900, 1280]) {
-      await page.setViewportSize({ width, height: 1000 });
-      await expect(page.locator('#board .replay-current')).toHaveCSS('outline-width', width >= 900 ? '4px' : '3px');
+      await resizeRoom(page, { width, height: 1000 });
+      await expect(page.locator('#board .replay-current')).toHaveCSS('outline-width', width >= 960 ? '4px' : '3px');
       const metrics = await page.locator('.stone-number').evaluateAll(nodes => nodes.map(node => {
         const number = node.getBoundingClientRect(), stone = node.parentElement!.getBoundingClientRect();
         return { text: node.textContent, white: node.parentElement!.classList.contains('white'),

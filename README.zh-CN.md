@@ -55,6 +55,8 @@ npm run dev
 
 后端需要 PostgreSQL 环境、匿名登录、允许访问的网页来源，以及下述数据库迁移。当前客户端配置上海地域。Vite 变量会写入浏览器构建产物，只能使用前端公开密钥，不能填写管理凭据。
 
+电脑和平板布局依据可用宽高自适应：宽屏人物卡和倒计时位于棋盘右侧，中等宽度视口的双卡并排位于棋盘上方；低高度窗口精简页头。对局序号和房间码保留在棋盘上方，回放和可折叠规则位于棋盘下方。宽屏表情保留在四个对局按钮旁，插画按实际剩余空间显示。窄屏保留上下人物卡与触控选点流程。
+
 ## 测试与构建
 
 ```sh
@@ -74,7 +76,7 @@ npm run test:game-page
 Remove-Item Env:GOMOKU_LOCAL_SQL
 ```
 
-macOS/Linux 可使用 `GOMOKU_LOCAL_SQL=1 GOMOKU_BROWSER=chrome npm run test:game-page`。本地游戏测试阻断 CloudBase 请求，覆盖双人对局、丢失回执、刷新、悔棋、邀请、音效与响应式操作，不验证云端鉴权或实体手机。截图和失败产物写入已忽略的 `test-results/`。
+macOS/Linux 可使用 `GOMOKU_LOCAL_SQL=1 GOMOKU_BROWSER=chrome npm run test:game-page`。本地游戏测试阻断 CloudBase 请求，覆盖双人对局、丢失回执、刷新、悔棋、邀请、音效与响应式操作，不验证云端鉴权或实体手机。截图和失败产物写入已忽略的 `test-results/`。`tests/game-e2e/layout.spec.ts` 使用受控快照验证视口、状态切换、按钮可见性和布局稳定性；这些快照检查不替代双端 SQL 回归或真实设备、浏览器缩放验收。
 
 线上测试需显式启用，会在目标环境创建房间和匿名会话。将 `GOMOKU_URL` 设为完整的 `/gomoku/` 地址，或设置 `GOMOKU_LIVE_LOCAL=1`，用构建后的本地预览连接所配置的后端。运行前先清除 `GOMOKU_LOCAL_SQL`。`GOMOKU_LONG_TEST=1` 额外启用五分钟离线用例。`npm run test:cloudbase-page` 检查独立诊断页，其公网测试需要 `CLOUDBASE_DIAGNOSTIC_URL`。
 

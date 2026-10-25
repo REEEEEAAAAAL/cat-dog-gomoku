@@ -1,4 +1,6 @@
 import './style.css';
+import './room-layout.css';
+import { setupRoomLayout } from './layout';
 import { avatar } from './avatars';
 import { login, send, inspectInvitation } from './api';
 import { clockText, createId } from './rules';
@@ -26,23 +28,7 @@ window.addEventListener('storage', event => {
   if (event.key === 'gomoku.sound') { audio.setEnabled(event.newValue !== 'off'); renderSound(); }
 });
 renderSound();
-const compactLayout = window.matchMedia('(max-width:760px)');
-const desktopLayout = window.matchMedia('(min-width:900px)');
-function positionDesktopActions() {
-  const panel = el('desktopActions');
-  panel.hidden = !desktopLayout.matches;
-  el('roomAside').insertBefore(el('rules'), panel);
-  if (desktopLayout.matches) {
-    for (const id of ['interactionControls', 'moveControls', 'leave']) panel.appendChild(el(id));
-  } else {
-    el('boardArea').appendChild(el('moveControls'));
-    el('mobileActions').appendChild(el('interactionControls'));
-    el('roomAside').insertBefore(el('rules'), panel);
-    el('roomAside').insertBefore(el('leave'), panel);
-  }
-}
-desktopLayout.addEventListener('change', positionDesktopActions);
-positionDesktopActions();
+const updateRoomLayout = setupRoomLayout();
 button('previousReactions').onclick = () => el('reactions').scrollBy({ left:-(el('reactions').clientWidth + 3), behavior:'smooth' });
 button('nextReactions').onclick = () => el('reactions').scrollBy({ left:el('reactions').clientWidth + 3, behavior:'smooth' });
 if (typeof CSS !== 'undefined' && typeof CSS.registerProperty === 'function') document.documentElement.classList.add('smooth-turn');
@@ -215,16 +201,6 @@ function renderBoard() {
   } else el('winOverlay').replaceChildren();
 }
 
-function positionReplayAside() {
-  const active = desktopLayout.matches && replayStep !== null;
-  el('room').classList.toggle('reviewing', active);
-  const height = active ? document.querySelector('.play-area')!.getBoundingClientRect().height - el('replayArea').getBoundingClientRect().height : 0;
-  if (active) el('room').style.setProperty('--replay-aside-height', `${height}px`);
-  else el('room').style.removeProperty('--replay-aside-height');
-}
-window.addEventListener('resize', positionReplayAside);
-desktopLayout.addEventListener('change', positionReplayAside);
-
 function renderReplay() {
   const s = snapshot;
   el('replayArea').hidden = s?.phase !== 'finished';
@@ -235,7 +211,6 @@ function renderReplay() {
   el('replayDetails').hidden = !active;
   button('toggleReplayNumbers').textContent = showReplayNumbers ? '隐藏步数' : '显示步数';
   button('toggleReplayNumbers').setAttribute('aria-pressed', String(showReplayNumbers));
-  positionReplayAside();
   if (!s || replayStep === null) return;
   const total = s.moves.length;
   input('replayProgress').max = String(total);
@@ -255,14 +230,7 @@ function seekReplay(step: number) {
   renderReplay(); renderBoard();
 }
 
-function positionLobby() {
-  const target = el(compactLayout.matches && snapshot?.phase === 'waiting' ? 'readySlot' : 'lobbySlot');
-  if (el('lobbyPanel').parentElement !== target) target.appendChild(el('lobbyPanel'));
-}
-compactLayout.addEventListener('change', positionLobby);
-
 function render() {
-  positionLobby();
   el('entryPanel').classList.toggle('invited', invited);
   el('joinTitle').hidden = !invited;
   el('invitationRole').hidden = !invited;
@@ -290,7 +258,7 @@ function render() {
   button('cancelApplication').disabled = busy;
   button('homeReturn').hidden = !s || s.phase !== 'closed';
   button('leave').hidden = !s || s.phase === 'closed';
-  if (!s) return;
+  if (!s) { updateRoomLayout(''); return; }
   el('round').textContent = String(s.round).padStart(2, '0');
   el('roomCode').textContent = s.code;
   playerElements(s);
@@ -320,11 +288,11 @@ function render() {
   el('turnHint').textContent = s.phase === 'running' ? `第 ${s.moves.length + 1} 手 · ${s.turnSeat === s.blackSeat ? '黑棋' : '白棋'}行棋`
     : s.phase === 'waiting' ? '双方准备后，黑棋先行' : s.phase === 'finished' ? '结果由服务端确认' : text;
   button('ready').hidden = s.phase !== 'waiting';
-  button('ready').textContent = own.ready ? '准备好啦！等对方' : '准备好啦！';
+  button('ready').textContent = own.ready ? '准备好啦！正在等待对方' : '准备好啦！';
   el('readyNotice').hidden = s.phase !== 'waiting' || !s.players[2 - s.seat].ready;
   button('ready').disabled = busy || !connected || !own.synced || own.ready || !s.players[1].name || !!uncertain;
   button('rematch').hidden = s.phase !== 'finished';
-  button('rematch').textContent = own.ready ? '已同意，等对方' : '再来一局 · 交换黑白';
+  button('rematch').textContent = own.ready ? '已同意，正在等待对方' : '再来一局 · 交换黑白';
   button('rematch').disabled = busy || !connected || !own.synced || own.ready || !!uncertain;
   const rematchInvite = s.phase === 'finished' && s.players[2 - s.seat].ready && !own.ready;
   el('rematchPanel').hidden = !rematchInvite;
@@ -363,6 +331,7 @@ function render() {
   }
   el('selectionHint').textContent = selection ? `已选 ${String.fromCharCode(65 + selection.x)}${selection.y + 1}，确认后才落子` : '点选交叉点，再确认落子';
   renderReplay(); renderBoard(); renderClock();
+  updateRoomLayout(s.phase);
 }
 
 function apply(reply: Reply, timely: boolean) {
