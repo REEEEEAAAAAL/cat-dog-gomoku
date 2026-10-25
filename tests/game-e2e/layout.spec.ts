@@ -306,3 +306,68 @@ test('decoration uses remaining height and stays settled around the visibility t
   expect(visibility).toContain('true');
   expect(visibility).toContain('false');
 });
+
+
+test('phone hints, replay rows and copied invitations keep their intended alignment', async ({ page }) => {
+  test.skip(!process.env.GOMOKU_LOCAL_SQL);
+  const { state, refresh } = await fixture(page);
+  const rect = (id: string) => page.locator(id).evaluate(node => {
+    const r = node.getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right, bottom: r.bottom };
+  });
+  for (const width of [320, 350, 351, 360, 361, 390, 430, 540, 599]) {
+    await page.setViewportSize({ width, height: 900 });
+    state.phase = 'running'; await refresh();
+    const hint = await rect('#selectionHint'), confirm = await rect('#confirm');
+    expect(Math.abs(hint.bottom - confirm.bottom)).toBeLessThan(1);
+    state.phase = 'finished'; state.reason = 'resign'; state.winner = 1; await refresh();
+    if (await page.locator('#dismissResult').isVisible()) await page.locator('#dismissResult').click();
+    const review = await rect('#reviewGame'), frame = await rect('.board-wrap');
+    expect(Math.abs(review.y - (await rect('#confirm')).y)).toBeLessThan(1);
+    expect(Math.abs(review.x - frame.x)).toBeLessThan(1);
+    await page.locator('#reviewGame').click();
+    await expect(page.locator('#selectionHint')).toBeHidden();
+    const progress = await rect('#replayProgress'), exit = await rect('#exitReplay');
+    const toggle = await rect('#toggleReplayNumbers'), count = await rect('#replayCount');
+    expect(Math.abs(progress.width - frame.width)).toBeLessThan(1);
+    expect(Math.abs(progress.x - frame.x)).toBeLessThan(1);
+    expect(exit.y - progress.bottom).toBe(6);
+    await expect(page.locator('#toggleReplayNumbers')).toHaveCSS('padding-left', '6px');
+    await expect(page.locator('#toggleReplayNumbers')).toHaveCSS('padding-right', '6px');
+    if (width <= 360) await expect(page.locator('#exitReplay')).toHaveCSS('padding-left', '0px');
+    for (const id of ['#replayStart', '#replayPrevious', '#replayNext', '#replayEnd']) {
+      const control = await rect(id);
+      expect(control.y).toBe(exit.y);
+      expect(control.width).toBe(40);
+      expect(control.x - toggle.right).toBeGreaterThanOrEqual(4);
+      expect(control.right).toBeLessThanOrEqual(frame.right);
+      expect(count.y).toBeGreaterThanOrEqual(control.bottom);
+    }
+    expect(Math.abs(exit.x - frame.x)).toBeLessThan(1);
+    expect(exit.y).toBe(toggle.y);
+    expect(toggle.x - exit.right).toBe(12);
+    expect(count.y).toBeGreaterThanOrEqual(exit.bottom);
+    await page.screenshot({ path: `test-results/mobile-polish/replay-${width}.png`, fullPage: true });
+    await page.locator('#exitReplay').click();
+    state.phase = 'running'; await refresh();
+    await expect(page.locator('#selectionHint')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  state.phase = 'waiting'; state.players[1].name = ''; await refresh();
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true,
+    value: { writeText: async () => {} } }));
+  for (const width of [320, 390, 599, 768, 1024, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    const before = await rect('.copy-actions');
+    for (const [id, label] of [['invite', '邀请链接复制成功！'], ['copyCode', '房间码复制成功！']]) {
+      await page.locator(`#${id}`).click();
+      await expect(page.locator(`#${id}`)).toHaveText(label);
+      const invite = await rect('#invite'), code = await rect('#copyCode');
+      expect(invite.y).toBe(code.y);
+      expect(code.x).toBeGreaterThan(invite.right);
+      expect((await rect('.copy-actions')).height).toBe(before.height);
+      expect(await page.locator(`#${id}`).evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+    }
+    await page.screenshot({ path: `test-results/mobile-polish/copied-${width}.png`, fullPage: true });
+  }
+});

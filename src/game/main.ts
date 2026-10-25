@@ -650,7 +650,7 @@ async function copy(id: string, value: string, label: string, success: string) {
     if (active !== epoch) return;
     el('copyFallback').hidden = true;
     target.textContent = success; target.classList.add('copied');
-    el('copyStatus').textContent = success;
+    el('copyStatus').textContent = '';
   } catch {
     if (active !== epoch) return;
     const box = el('copyFallback') as HTMLTextAreaElement;
@@ -663,7 +663,7 @@ async function copy(id: string, value: string, label: string, success: string) {
     copyTimers.set(id, window.setTimeout(() => { target.textContent = label; target.classList.remove('copied'); }, 5000));
   }
 }
-button('invite').onclick = () => { void copy('invite', `${location.origin}${location.pathname}#${snapshot?.code || room}`, '复制邀请链接', '复制成功！发送给对方让TA加入吧~'); };
+button('invite').onclick = () => { void copy('invite', `${location.origin}${location.pathname}#${snapshot?.code || room}`, '复制邀请链接', '邀请链接复制成功！'); };
 button('copyCode').onclick = () => { if (snapshot) void copy('copyCode', snapshot.code, '复制房间码', '房间码复制成功！'); };
 const leaveDialog = el('leaveDialog') as HTMLDialogElement;
 button('leave').onclick = () => leaveDialog.showModal();

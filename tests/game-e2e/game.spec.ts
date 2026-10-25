@@ -557,7 +557,7 @@ test('clipboard success is explicit, restores labels and handles unavailable cli
     }
     await a.evaluate(() => { Object.defineProperty(navigator, 'clipboard', { configurable:true, value:{ writeText: async (value: string) => { sessionStorage.setItem('copied-value',value); } } }); });
     await a.locator('#invite').click();
-    await expect(a.locator('#invite')).toHaveText('复制成功！发送给对方让TA加入吧~');
+    await expect(a.locator('#invite')).toHaveText('邀请链接复制成功！');
     expect(await a.evaluate(() => sessionStorage.getItem('copied-value'))).toContain(await a.locator('#roomCode').textContent());
     await resizeRoom(a, {width:320,height:844});
     expect(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -1032,7 +1032,8 @@ test('replay is local, independent, responsive and resets only when a rematch st
       const controls = await a.locator('#replayArea').boundingBox();
       const toggle = (await a.locator('#toggleReplayNumbers').boundingBox())!;
       const navigation = (await a.locator('#replayPrevious').boundingBox())!;
-      expect(navigation.y - toggle.y - toggle.height).toBeGreaterThanOrEqual(10);
+      if (width < 600) expect(navigation.y).toBe(toggle.y);
+      else expect(navigation.y - toggle.y - toggle.height).toBeGreaterThanOrEqual(10);
       expect(controls!.y).toBeGreaterThan(board!.y + board!.height);
       if (width >= 960) {
         const frame = (await a.locator('.board-wrap').boundingBox())!;
