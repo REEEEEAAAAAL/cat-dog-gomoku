@@ -106,7 +106,6 @@
 #room[data-layout="stacked"] .action-cluster #cancel, #room[data-layout="stacked"] .action-cluster #resign { grid-column: 1; }
 #room[data-layout="stacked"] .interaction-controls { flex-direction: row; align-items: center; margin-top: 10px; gap: 10px; }
 #room[data-layout="stacked"] .interaction-controls .reactions { width: auto; }
-#room[data-layout="stacked"] .round-actions { align-self: center; }
 #room[data-layout="stacked"] .reactions button { width: 44px; }
 #room[data-layout="stacked"] #tabletNotices { order: -1; }
 #negotiationDialog { padding: 0; }

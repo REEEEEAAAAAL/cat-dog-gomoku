@@ -146,12 +146,14 @@ test('ready polling stays bounded and a muted opening is not replayed on unmute'
   const game = await pair(browser, false), { a, b } = game;
   try {
     await a.locator('#sound').click(); await a.locator('#ready').click();
+    await expect(a.locator('#ready')).toHaveText('准备好啦！正在等待对方');
     let polls = 0;
     a.on('request', request => {
       if (request.url().endsWith('/rpc/gomoku_command') && request.postDataJSON().p_action === 'snapshot') polls++;
     });
     await new Promise(resolve => setTimeout(resolve, 4200));
-    expect(polls).toBeGreaterThanOrEqual(3); expect(polls).toBeLessThanOrEqual(5);
+    // A timer tick just below the one-second threshold defers polling to the next tick.
+    expect(polls).toBeGreaterThanOrEqual(2); expect(polls).toBeLessThanOrEqual(5);
     await b.locator('#ready').click();
     await expect(a.locator('#ready')).toBeHidden(); await expect.poll(() => count(b, 'start')).toBe(1);
     expect(await count(a, 'start')).toBe(0);

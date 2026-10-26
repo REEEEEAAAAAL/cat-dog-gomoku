@@ -804,7 +804,7 @@ test('resignation controls align on phones and desktops and dialogs fit narrow s
         expect(Math.abs(resign.x-cancel.x)).toBeLessThan(1);
         expect(Math.abs(undo.x-confirm.x)).toBeLessThan(1);
       }
-      if (width >= 600 && width < 960) expect(resign.x).toBeLessThan(undo.x);
+      if (width < 960) expect(resign.x).toBeLessThan(undo.x);
       else expect(resign.x).toBeGreaterThan(undo.x);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       if (width >= 960) {
