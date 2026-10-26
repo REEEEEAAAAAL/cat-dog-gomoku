@@ -14,7 +14,10 @@ docs/internal/
 *.log
 .npm-cache/
 AGENTS.md
+.codex/
+.agents/
 .cloudbase-backup/
+responsive-release/
 *.tsbuildinfo
 .DS_Store
 Thumbs.db

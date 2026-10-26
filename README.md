@@ -4,7 +4,7 @@
 
 <p align="center"><a href="https://cat-and-dog-gomoku-d4c9e5cfbbfc0-1513741929.tcloudbaseapp.com/gomoku/">Play online</a> | <a href="#screenshots">Screenshots</a> | <a href="https://github.com/REEEEEAAAAAL/cat-dog-gomoku">Source code</a></p>
 
-A small online Gomoku game for two people. Pick a cat or dog, send an invitation, and play together on a 15×15 board. Built for phones and desktops, with no account registration and a Simplified Chinese interface.
+A small online Gomoku game for two people. Pick a cat or dog, send an invitation, and play together on a 15×15 board. Built for phones, tablets, and desktops, with no account registration and a Simplified Chinese interface.
 
 The hosted game uses a CloudBase trial environment with limited validity and quotas. Its default domain may show a confirmation page before opening the game.
 
@@ -55,6 +55,8 @@ npm run dev
 
 This requires a PostgreSQL environment with anonymous login, an allowed web origin, and the migrations below. The current client configures the Shanghai region. Vite variables are embedded in the browser bundle: use only a frontend publishable key, never management credentials.
 
+The game layout responds to available width and height. Desktop and wide landscape windows place both player cards and the timer to the right of the board; portrait tablets and medium windows place the cards side by side above it. Low-height windows use a compact header and tighter spacing to preserve board space, with scrolling for crowded status panels. Replay and collapsible rules sit below the board; wide layouts keep player cards and actions stable as room states change, and show the illustration only when space permits. Phones retain touch preview and stacked player cards, with confirm/undo on the right and cancel/resign on the left. Replay navigation stays on one row, and invitation buttons keep their size when showing copy success.
+
 ## Tests and builds
 
 ```sh
@@ -74,7 +76,7 @@ npm run test:game-page
 Remove-Item Env:GOMOKU_LOCAL_SQL
 ```
 
-On macOS/Linux, use `GOMOKU_LOCAL_SQL=1 GOMOKU_BROWSER=chrome npm run test:game-page`. Local game tests block CloudBase requests and cover two-player play, lost acknowledgements, refresh, undo, invitations, audio, and responsive controls. They do not validate cloud authentication or physical mobile devices. Screenshots and failures go to the ignored `test-results/` directory.
+On macOS/Linux, use `GOMOKU_LOCAL_SQL=1 GOMOKU_BROWSER=chrome npm run test:game-page`. Local game tests block CloudBase requests and cover two-player play, lost acknowledgements, refresh, undo, invitations, audio, and responsive controls. They do not validate cloud authentication or physical mobile devices. Screenshots and failures go to the ignored `test-results/` directory. `tests/game-e2e/layout.spec.ts` uses controlled snapshots to check viewports, state changes, button visibility, and layout stability; these checks do not replace two-client SQL regression tests, physical-device testing, or actual browser zoom acceptance.
 
 Live tests are opt-in and create rooms and anonymous sessions in the chosen environment. Set `GOMOKU_URL` to its full `/gomoku/` URL, or set `GOMOKU_LIVE_LOCAL=1` to use a built local preview with your configured backend. Clear `GOMOKU_LOCAL_SQL` first. `GOMOKU_LONG_TEST=1` additionally enables the five-minute absence case. `npm run test:cloudbase-page` checks the separate diagnostic page; its public tests require `CLOUDBASE_DIAGNOSTIC_URL`.
 
@@ -111,15 +113,21 @@ The root `index.html`, `public/`, `vite.config.ts`, `wrangler.jsonc`, and genera
 
 ## Screenshots
 
-Real game screens captured in local two-browser games using the SQL migrations. The phone image uses a simulated viewport.
+Final responsive layouts captured from a local two-browser game using the SQL migrations. Tablet and phone sizes are simulated viewports; the phone image shows the full page.
 
-<img src="docs/screenshots/desktop-surrender.png" alt="Desktop game" width="700" />
+Desktop (1280×844), portrait tablet (768×1024), and phone (390×844).
 
-<img src="docs/screenshots/mobile-surrender.png" alt="Game at a 390-pixel phone viewport" width="260" />
+<img src="docs/screenshots/desktop.png" alt="Desktop game with player cards, timer, and actions beside the board" width="700" />
+
+<p><img src="docs/screenshots/tablet.png" alt="Portrait tablet game with both player cards above the board" width="360" /> <img src="docs/screenshots/mobile.png" alt="Full-page game at a 390-pixel phone viewport" width="260" /></p>
+
+Compact layout in a low-height window (1024×675).
+
+<img src="docs/screenshots/compact.png" alt="Low-height layout with a compact header and the board beside player controls" width="700" />
 
 Post-game replay at move 24 of a 26-move round, showing move numbers, the current-move highlight, the progress slider, and all four navigation controls.
 
-<img src="docs/screenshots/desktop-replay.jpg" alt="Desktop replay at move 24 of 26 with numbered stones and navigation controls" width="700" />
+<img src="docs/screenshots/desktop-replay.png" alt="Desktop replay at move 24 of 26 with numbered stones and navigation controls" width="700" />
 
 ## License
 

@@ -4,7 +4,7 @@
 
 <p align="center"><a href="https://cat-and-dog-gomoku-d4c9e5cfbbfc0-1513741929.tcloudbaseapp.com/gomoku/">在线游玩</a> | <a href="#截图">截图</a> | <a href="https://github.com/REEEEEAAAAAL/cat-dog-gomoku">源代码</a></p>
 
-一个为两个人设计的在线五子棋小游戏。选择猫猫或狗狗，分享邀请，在 15×15 棋盘上一起下一局。支持手机与电脑，无需注册账号，游戏界面为简体中文。
+一个为两个人设计的在线五子棋小游戏。选择猫猫或狗狗，分享邀请，在 15×15 棋盘上一起下一局。支持手机、平板与电脑，无需注册账号，游戏界面为简体中文。
 
 线上游戏使用有有效期与额度限制的 CloudBase 体验环境，默认域名首次访问可能显示确认页面。
 
@@ -55,6 +55,8 @@ npm run dev
 
 后端需要 PostgreSQL 环境、匿名登录、允许访问的网页来源，以及下述数据库迁移。当前客户端配置上海地域。Vite 变量会写入浏览器构建产物，只能使用前端公开密钥，不能填写管理凭据。
 
+布局依据可用宽高自适应：电脑和宽横屏将双方人物卡、倒计时放在棋盘右侧，平板竖屏与中等宽度窗口将双卡并排放在棋盘上方。低高度窗口精简页头、收紧间距，优先保留棋盘空间，拥挤的状态区可滚动。回放与可折叠规则位于棋盘下方；宽屏人物卡和操作区在房间状态切换时保持稳定，空间足够时显示插画。手机保留触控选点和上下人物卡，确认落子／申请悔棋在右，取消／认输在左；回放导航保持同排，邀请按钮显示复制成功时尺寸不变。
+
 ## 测试与构建
 
 ```sh
@@ -74,7 +76,7 @@ npm run test:game-page
 Remove-Item Env:GOMOKU_LOCAL_SQL
 ```
 
-macOS/Linux 可使用 `GOMOKU_LOCAL_SQL=1 GOMOKU_BROWSER=chrome npm run test:game-page`。本地游戏测试阻断 CloudBase 请求，覆盖双人对局、丢失回执、刷新、悔棋、邀请、音效与响应式操作，不验证云端鉴权或实体手机。截图和失败产物写入已忽略的 `test-results/`。
+macOS/Linux 可使用 `GOMOKU_LOCAL_SQL=1 GOMOKU_BROWSER=chrome npm run test:game-page`。本地游戏测试阻断 CloudBase 请求，覆盖双人对局、丢失回执、刷新、悔棋、邀请、音效与响应式操作，不验证云端鉴权或实体手机。截图和失败产物写入已忽略的 `test-results/`。`tests/game-e2e/layout.spec.ts` 使用受控快照验证视口、状态切换、按钮可见性和布局稳定性；这些快照检查不替代双端 SQL 回归或真实设备、浏览器缩放验收。
 
 线上测试需显式启用，会在目标环境创建房间和匿名会话。将 `GOMOKU_URL` 设为完整的 `/gomoku/` 地址，或设置 `GOMOKU_LIVE_LOCAL=1`，用构建后的本地预览连接所配置的后端。运行前先清除 `GOMOKU_LOCAL_SQL`。`GOMOKU_LONG_TEST=1` 额外启用五分钟离线用例。`npm run test:cloudbase-page` 检查独立诊断页，其公网测试需要 `CLOUDBASE_DIAGNOSTIC_URL`。
 
@@ -111,15 +113,21 @@ tcb hosting deploy ./dist/cloudbase/game gomoku --env-id YOUR_ENV_ID --verify
 
 ## 截图
 
-使用真实 SQL 迁移，在本地双浏览器对局中截取实际运行界面。手机图使用模拟视口。
+使用真实 SQL 迁移，在本地双浏览器对局中截取最终响应式界面。平板与手机尺寸使用模拟视口，手机图为全页截图。
 
-<img src="docs/screenshots/desktop-surrender.png" alt="电脑端对局" width="700" />
+电脑（1280×844）、平板竖屏（768×1024）与手机（390×844）。
 
-<img src="docs/screenshots/mobile-surrender.png" alt="390 像素手机视口下的对局" width="260" />
+<img src="docs/screenshots/desktop.png" alt="电脑端对局，人物卡、倒计时和操作区位于棋盘右侧" width="700" />
+
+<p><img src="docs/screenshots/tablet.png" alt="平板竖屏对局，双方人物卡并排位于棋盘上方" width="360" /> <img src="docs/screenshots/mobile.png" alt="390 像素手机视口下的全页对局" width="260" /></p>
+
+低高度窗口的紧凑布局（1024×675）。
+
+<img src="docs/screenshots/compact.png" alt="低高度紧凑布局，精简页头，棋盘与玩家操作区并排" width="700" />
 
 26 手棋局回放至第 24 手，展示棋子编号、当前手高亮、进度条及四个回放控制按钮。
 
-<img src="docs/screenshots/desktop-replay.jpg" alt="电脑端第 24／26 手回放，包含棋子编号与回放控制按钮" width="700" />
+<img src="docs/screenshots/desktop-replay.png" alt="电脑端第 24／26 手回放，包含棋子编号与回放控制按钮" width="700" />
 
 ## 许可
 
