@@ -21,13 +21,15 @@ export default defineConfig({
         CREATE FUNCTION auth.uid() RETURNS text LANGUAGE sql AS $$ SELECT current_setting('request.uid',true) $$;
         CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql AS $$ SELECT 'authenticated'::text $$;
         CREATE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql AS $$ SELECT '{}'::jsonb $$;`);
-      for (const file of (await readdir('cloudbase/migrations')).sort().filter(f => f.includes('gomoku_mvp') || f.includes('undo_and_reactions') || f.includes('application_lifecycle') || f.includes('interaction_feedback') || f.includes('invitation_preview') || f.includes('resign'))) {
+      for (const file of (await readdir('cloudbase/migrations')).sort().filter(f => f.includes('gomoku_mvp') || f.includes('undo_and_reactions') || f.includes('application_lifecycle') || f.includes('interaction_feedback') || f.includes('invitation_preview') || f.includes('resign') || f.includes('text_chat'))) {
         await db.exec(await readFile(`cloudbase/migrations/${file}`, 'utf8'));
       }
-      const installed = await db.query<{ definition: string }>("SELECT pg_get_functiondef('public.gomoku_command(text,text,uuid,uuid,integer,uuid,jsonb,integer)'::regprocedure) AS definition");
+      const installed = await db.query<{ definition: string }>("SELECT pg_get_functiondef('public.gomoku_game_command(text,text,uuid,uuid,integer,uuid,jsonb,integer)'::regprocedure) AS definition");
       if (!installed.rows[0].definition.includes("s.reason:='resign'")) throw new Error('Latest game migration is missing from the local test server');
       let queue: Promise<unknown> = Promise.resolve();
-      server.middlewares.use('/rpc/gomoku_command', (req, res) => {
+      server.middlewares.use('/rpc', (req, res) => {
+        const chat = req.url === '/gomoku_chat';
+        if (!chat && req.url !== '/gomoku_command') { res.statusCode = 404; res.end(); return; }
         let body = '';
         req.on('data', chunk => { body += String(chunk); });
         req.on('end', () => {
@@ -36,8 +38,10 @@ export default defineConfig({
             try {
               const p = JSON.parse(body) as Record<string, unknown>;
               await db.query("SELECT set_config('request.uid',$1,false)", [req.headers['x-test-uid'] || '']);
-              const result = await db.query<{ reply: unknown }>('SELECT public.gomoku_command($1,$2,$3,$4,$5,$6,$7,$8) AS reply',
-                [p.p_room, p.p_action, p.p_client, p.p_operation, p.p_version, p.p_game, p.p_data, p.p_protocol]);
+              const result = chat ? await db.query<{ reply: unknown }>('SELECT public.gomoku_chat($1,$2,$3,$4) AS reply',
+                [p.p_room,p.p_client,p.p_operation,p.p_text])
+                : await db.query<{ reply: unknown }>('SELECT public.gomoku_command($1,$2,$3,$4,$5,$6,$7,$8) AS reply',
+                  [p.p_room, p.p_action, p.p_client, p.p_operation, p.p_version, p.p_game, p.p_data, p.p_protocol]);
               res.end(JSON.stringify(result.rows[0].reply));
             } catch (error) {
               res.statusCode = 400; res.end(JSON.stringify({ message: error instanceof Error ? error.message : 'SQL failure' }));

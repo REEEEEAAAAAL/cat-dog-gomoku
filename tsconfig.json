@@ -5,7 +5,7 @@
     "moduleResolution": "Bundler",
     "customConditions": ["node"],
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["./worker-configuration.d.ts", "node"],
+    "types": ["vite/client", "node"],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,

@@ -459,12 +459,14 @@ test('mutual undo, exact impact, emoji delivery while paused and refreshed reque
     const responsePanel = await white.locator('#undoPanel').boundingBox();
     const boardArea = await white.locator('#board').boundingBox();
     if (await white.locator('#room').getAttribute('data-layout') === 'wide') {
-      expect(responsePanel!.x).toBeGreaterThan(boardArea!.x + boardArea!.width);
+      await expect(white.locator('#negotiationDialog')).toBeVisible();
+      await expect(white.locator('#negotiationDialog > #undoPanel')).toBeVisible();
       expect(boardArea).toEqual(boardBeforeUndo);
       await expect(white.locator('#acceptUndo')).toBeInViewport({ ratio: 1 });
     } else expect(responsePanel!.y + responsePanel!.height).toBeLessThan(boardArea!.y);
     await expect(white.locator('#undoImpact')).toContainText('最近 2 颗');
     await expect(white.locator('#gameStatus')).toHaveText('悔棋请求待处理');
+    await resizeRoom(white, { width: 390, height: 844 });
     await white.locator('[data-emoji="cat"]').click();
     await expect(white.locator('#selfPlayer .reaction-bubble')).toHaveText('😼');
     await expect(black.locator('#opponentPlayer .reaction-bubble')).toHaveText('😼');

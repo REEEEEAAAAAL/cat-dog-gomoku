@@ -6,7 +6,7 @@
 
 A small online Gomoku game for two people. Pick a cat or dog, send an invitation, and play together on a 15×15 board. Built for phones, tablets, and desktops, with no account registration and a Simplified Chinese interface.
 
-The hosted game uses a CloudBase trial environment with limited validity and quotas. Its default domain may show a confirmation page before opening the game.
+The hosted game uses a CloudBase prepaid environment with limited validity and quotas. Its default domain may show a confirmation page before opening the game.
 
 ## Features
 
@@ -17,8 +17,9 @@ The hosted game uses a CloudBase trial environment with limited validity and quo
 - Resignation at any time after a round starts, with confirmation and a server-persisted result; no opponent approval is needed.
 - Review the finished round on the same board with a progress slider and four controls: start, previous, next, and end. Toggle move numbers and follow the highlighted current move with player and color labels. Replay is local and independent for each player; undone moves are excluded and past rounds are not permanently archived.
 - Rematches with swapped colors, eight fixed reactions, and local sound effects with a persistent mute setting. A short opening cue plays when each new game starts; restored or stale openings stay silent.
+- Room text chat for seated players, with unread indicators and retryable sends. Messages are limited to 100 characters; the latest 50 survive refresh and rematches.
 
-There is no matchmaking, spectator mode, free-text chat, or computer opponent. An invitation grants permission to apply, not ownership of a player's seat. Returning players use the same browser session; another browser cannot take over their identity. Leaving closes the room for both players, and rooms expire after 24 hours.
+There is no matchmaking, spectator mode, or computer opponent. An invitation grants permission to apply, not ownership of a player's seat. Returning players use the same browser session; another browser cannot take over their identity. Leaving closes the room for both players, and rooms expire after 24 hours.
 
 ## Design
 
@@ -28,8 +29,17 @@ The frontend uses strict TypeScript, Vite, native DOM/SVG, and Web Audio. CloudB
 - **Retries preserve intent.** Operation IDs and stored receipts prevent duplicate moves after a lost response. An uncertain result remains visible for retry and reconciliation. Refresh restores the session, and a new tab takes over that browser's seat.
 - **Polling keeps deployment simple.** Active, visible pages normally poll every five seconds. A player who is ready and waiting for a new game polls about once per second until it starts. Partner updates can take one polling interval. Hidden pages stop polling; waiting and finished pages also rest after two minutes without interaction. A 15-second heartbeat lease tolerates brief interruptions before pausing play.
 - **Time survives reconnects.** PostgreSQL stores deadlines and remaining time. Both players must reconnect and acknowledge synchronization to resume. Expired timers are settled by the next RPC, including when both players have been absent; there is no background scheduler.
+- **Chat stays separate.** Chat uses independent requests and message IDs, preserving game operations, timers, and retries. An active chat panel supplements normal polling; background pages stop polling.
 
-The game uses HTTP polling rather than PostgreSQL Realtime. An earlier Cloudflare Workers/SQLite Durable Objects candidate remains in the repository as historical source, separate from the active deployment.
+The maintained deployment uses CloudBase PostgreSQL and HTTP polling; PostgreSQL Realtime is not enabled.
+
+## Text chat
+
+Text chat is available in the hosted game after both players have taken their seats. Open **聊天** in your player card on a phone, or below the reactions on desktop. Enter sends, Shift+Enter adds a line, and the Send button supports touch input; selecting text with an input method does not send it.
+
+An unread count and soft green button indicate new messages. Messages remain unread while you browse older messages or the page is hidden, and clear once the latest messages are visible. New messages follow the bottom when you are already there; otherwise your reading position stays in place. The floating down-arrow returns to the latest message, and sending your own message also scrolls there.
+
+Each message allows 100 Unicode code points. The server retains the latest 50 messages across refreshes and rematches in the same room; each player can send once every two seconds and at most ten times per minute. An unconfirmed send can be retried without duplication. Room expiration blocks further access; deletion of a room also removes its chat data. There are no background push notifications.
 
 ## Run locally
 
@@ -57,6 +67,8 @@ This requires a PostgreSQL environment with anonymous login, an allowed web orig
 
 The game layout responds to available width and height. Desktop and wide landscape windows place both player cards and the timer to the right of the board; portrait tablets and medium windows place the cards side by side above it. Low-height windows use a compact header and tighter spacing to preserve board space, with scrolling for crowded status panels. Replay and collapsible rules sit below the board; wide layouts keep player cards and actions stable as room states change, and show the illustration only when space permits. Phones retain touch preview and stacked player cards, with confirm/undo on the right and cancel/resign on the left. Replay navigation stays on one row, and invitation buttons keep their size when showing copy success.
 
+Chat opens in a collapsible overlay without resizing the board, with an entry in the player card on phones and near the game controls on larger screens.
+
 ## Tests and builds
 
 ```sh
@@ -66,7 +78,7 @@ npm test
 npm run build:cloudbase
 ```
 
-Unit tests run the SQL migrations in isolated PGlite instances with a controlled server clock, alongside protocol, rules, audio-event, HTTP, and legacy-session tests. They require no cloud credentials.
+Unit tests run the SQL migrations in isolated PGlite instances with a controlled server clock, alongside protocol, rules, audio-event, HTTP, and chat tests. They require no cloud credentials.
 
 Browser tests use installed Microsoft Edge by default. Set `GOMOKU_BROWSER=chrome` to use installed Google Chrome. To run the game flows against local SQL in PowerShell:
 
@@ -92,10 +104,12 @@ tcb db pg migration list --env-id YOUR_ENV_ID
 tcb db pg migration up --dry-run --env-id YOUR_ENV_ID
 tcb db pg migration up --env-id YOUR_ENV_ID --yes
 tcb db pg migration list --env-id YOUR_ENV_ID
-tcb hosting deploy ./dist/cloudbase/game gomoku --env-id YOUR_ENV_ID --verify
+tcb hosting deploy ./dist/cloudbase/game gomoku --env-id YOUR_ENV_ID --safe --verify
 ```
 
 Apply the ordered files in `cloudbase/migrations/` without editing previously applied migrations. They include the separate diagnostic schema as well as the game schema. The build packages game assets in `dist/cloudbase/game/`, diagnostic assets in `dist/cloudbase/site/`, and SQL in `dist/cloudbase/database/`. Upload only the intended frontend directory. The optional diagnostic page can be deployed separately to `gomoku-diag/`.
+
+Check migration history and apply only pending migrations before deploying a client that depends on them.
 
 Invitations use URL fragments and need no custom server routing. Save the previous frontend build before replacing it, retain old hashed assets, and avoid `--prune` when a rollback may be needed. Restore a saved frontend build to roll back the website; database recovery must be reviewed separately, without deleting migration history.
 
@@ -107,13 +121,12 @@ Invitations use URL fragments and need no custom server routing. Save the previo
 | `cloudbase/migrations/` | Ordered PostgreSQL migrations and authoritative game RPC |
 | `tests/` | Unit, SQL, and browser tests; local SQL adapter |
 | `diagnostics/cloudbase/` | Independent connection/timing diagnostic and shared HTTP helper |
-| `src/worker/`, `src/client/`, `src/shared/` | Earlier Cloudflare candidate and its session model |
 
-The root `index.html`, `public/`, `vite.config.ts`, `wrangler.jsonc`, and generated Worker types support the earlier candidate. Its commands use the `:legacy-cloudflare` suffix; `build:cloudbase` is the current build path.
+`game.config.ts` and `cloudbase-probe.config.ts` build the game and diagnostic page separately. `build:cloudbase` packages both frontends and the migration files.
 
 ## Screenshots
 
-Final responsive layouts captured from a local two-browser game using the SQL migrations. Tablet and phone sizes are simulated viewports; the phone image shows the full page.
+Real screenshots from the hosted game with two independent anonymous players. Tablet and phone sizes are simulated browser viewports; the phone images show the full page.
 
 Desktop (1280×844), portrait tablet (768×1024), and phone (390×844).
 

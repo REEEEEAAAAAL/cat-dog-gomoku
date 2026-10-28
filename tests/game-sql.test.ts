@@ -4,6 +4,8 @@ import { beforeAll, afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { isReply } from '../src/game/protocol';
 import type { Action, Reply, Snapshot } from '../src/game/protocol';
 import type { Move, Seat } from '../src/game/rules';
+import type { ChatSnapshot } from '../src/game/chat-protocol';
+import { isChatSnapshot } from '../src/game/chat-protocol';
 
 let db: PGlite;
 let room: string;
@@ -57,11 +59,127 @@ beforeAll(async () => {
   const preview = await readFile('cloudbase/migrations/20261023050000_invitation_preview.sql', 'utf8');
   await db.exec(preview.replaceAll('clock_timestamp()', 'public.test_now()'));
   await db.exec(resign.replaceAll('clock_timestamp()', 'public.test_now()'));
+  const chat = await readFile('cloudbase/migrations/20261028010000_text_chat.sql', 'utf8');
+  await db.exec(chat.replaceAll('clock_timestamp()', 'public.test_now()'));
 });
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
-  await db.exec('RESET ROLE'); await time(); room = crypto.randomUUID(); await as(1);
+  await db.exec("RESET ROLE; SELECT set_config('request.visitor','false',false)"); await time(); room = crypto.randomUUID(); await as(1);
   await call('create', { name: '狗狗', animal: 'dog' }); await sync();
+});
+
+async function chat(text: string | null = null, operation: string | null = text === null ? null : crypto.randomUUID(), target = room, client = clients[caller - 1]) {
+  const result = await db.query<{ reply: ChatSnapshot }>('SELECT public.gomoku_chat($1,$2,$3,$4) AS reply', [target, client, operation, text]);
+  expect(isChatSnapshot(result.rows[0].reply)).toBe(true);
+  return result.rows[0].reply;
+}
+
+describe('room text chat on isolated PostgreSQL', () => {
+  it('restricts both reads and sends to seated identities and the current client', async () => {
+    await chat('房主消息');
+    await as(2); const pending = await call('apply', { name: '访客' });
+    expect(pending).not.toHaveProperty('chat');
+    await expect(chat()).rejects.toThrow('forbidden');
+    await expect(chat('访客消息')).rejects.toThrow('forbidden');
+    await user('outsider'); await expect(chat()).rejects.toThrow('forbidden');
+    await as(1); await expect(chat(null,null,room,clients[1])).rejects.toThrow('superseded');
+    await expect(chat(null,null,crypto.randomUUID())).rejects.toThrow('not_found');
+    await user('', 'anon'); await expect(chat()).rejects.toThrow('unauthorized');
+    await user(`player-1-${room}`, 'anon');
+    await db.exec("SELECT set_config('request.visitor','false',false)");
+    await expect(chat()).rejects.toThrow('unauthorized');
+    await db.exec("SELECT set_config('request.visitor','true',false); SET ROLE anon");
+    expect((await chat()).messages).toHaveLength(1);
+    for (const table of ['gomoku_chat_messages','gomoku_chat_receipts','gomoku_chat_state']) {
+      await expect(db.query(`SELECT * FROM public.${table}`)).rejects.toThrow('permission denied');
+      await expect(db.query(`DELETE FROM public.${table}`)).rejects.toThrow('permission denied');
+    }
+    await expect(db.query('SELECT public.gomoku_chat_snapshot($1)',[room])).rejects.toThrow('permission denied');
+    await expect(db.query("SELECT public.gomoku_game_command($1,'snapshot',$2)",[room,clients[0]])).rejects.toThrow('permission denied');
+  });
+
+  it.each(['', ' \t\r\n', '　 \uFEFF', '\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f', '字'.repeat(101), '😀'.repeat(101), 'a\u0001b'])('rejects invalid text case %#', async text => {
+    await expect(chat(text)).rejects.toThrow('invalid_chat');
+    expect((await chat()).revision).toBe(0);
+  });
+
+  it('counts Unicode code points and preserves text without interpreting markup', async () => {
+    expect((await chat('😀'.repeat(100))).messages[0].text).toBe('😀'.repeat(100));
+    await time(2000);
+    const text = '<img src=x onerror=alert(1)>\n你好';
+    expect((await chat(text)).messages.at(-1)?.text).toBe(text);
+  });
+
+  it('enforces a two-second interval and ten sends per rolling minute per player', async () => {
+    await chat('一');
+    await expect(chat('二')).rejects.toThrow('chat_rate_limit');
+    await time(1999); await expect(chat('二')).rejects.toThrow('chat_rate_limit');
+    for (let i = 1; i < 10; i++) { await time(i*2000); await chat(String(i)); }
+    await time(20000); await expect(chat('第十一条')).rejects.toThrow('chat_rate_limit');
+    await time(60000); expect((await chat('满一分钟')).messages).toHaveLength(11);
+  });
+
+  it('orders and retains only fifty bodies, keeps retry receipts after pruning, and does not cross rooms', async () => {
+    const operation = crypto.randomUUID(); await chat('最早消息',operation);
+    for (let i=1;i<55;i++) { await time(i*6100); await chat(`消息${i}`); }
+    const history = await chat();
+    expect(history.messages.map(m=>m.seq)).toEqual(Array.from({length:50},(_,i)=>i+6));
+    expect((await chat('最早消息',operation))).toMatchObject({revision:55,ack:operation,duplicate:true});
+    await expect(chat('改写消息',operation)).rejects.toThrow('chat_id_conflict');
+    expect((await db.query('SELECT * FROM public.gomoku_chat_messages WHERE room=$1',[room])).rows).toHaveLength(50);
+    const originalRoom=room; room=crypto.randomUUID(); await as(1); await call('create',{name:'另一个房间',animal:'cat'});
+    expect((await chat()).messages).toEqual([]);
+    await expect(chat(null,null,originalRoom)).rejects.toThrow('forbidden');
+  });
+
+  it('deduplicates simultaneous retries without modifying any game state or operation receipts', async () => {
+    const before = await db.query('SELECT to_jsonb(r) AS state FROM public.gomoku_rooms r WHERE id=$1',[room]);
+    const operation=crypto.randomUUID();
+    const results=await Promise.all([chat('重试',operation),chat('重试',operation)]);
+    expect(results.map(r=>r.revision)).toEqual([1,1]); expect(results[1].duplicate).toBe(true);
+    expect((await db.query('SELECT to_jsonb(r) AS state FROM public.gomoku_rooms r WHERE id=$1',[room])).rows).toEqual(before.rows);
+    await call('snapshot'); expect(current.chat?.messages).toHaveLength(1);
+  });
+
+  it('keeps a send ID bound to its sender and accepts the original acknowledgement after closure', async () => {
+    await start(); const operation=crypto.randomUUID();await chat('原消息',operation);
+    await as(2);await expect(chat('原消息',operation)).rejects.toThrow('chat_id_conflict');
+    await as(1);await call('snapshot');await call('leave');
+    expect((await chat('原消息',operation)).duplicate).toBe(true);
+    const reply=await call('snapshot');
+    expect(isReply(reply)).toBe(true);
+    const legacy={...reply}; if(!legacy.pending) delete legacy.chat;
+    expect(isReply(legacy)).toBe(true);
+  });
+
+  it('coexists with moves and undo, survives reconnect and rematch, and stops new sends after closure', async () => {
+    await start(); await as(current.turnSeat); await call('snapshot');
+    const version=current.version;
+    await chat('落子同时聊天');
+    await call('move',{x:7,y:7},{version}); expect(current.accepted).toBe(true);
+    await call('undo_request',{target:current.moves[0].id});
+    const undo=current.undoRequest;
+    await as(current.turnSeat); await call('snapshot');
+    await time(2000); await chat('暂停中也能聊天');
+    await call('snapshot'); expect(current.undoRequest).toEqual(undo);
+    await call('undo_respond',{request:undo?.id,accept:true}); expect(current.moves).toHaveLength(0);
+    await call('resign'); expect(current.phase).toBe('finished');
+    await time(4000); await chat('再来一局');
+    await call('rematch'); await as(caller===1?2:1); await call('snapshot'); await call('rematch');
+    expect(current.round).toBe(2); expect(current.chat?.messages).toHaveLength(3);
+    await call('connect'); await sync(); expect((await chat()).messages).toHaveLength(3);
+    await call('leave'); await expect(chat('关闭后')).rejects.toThrow('room_closed');
+    expect((await chat()).messages).toHaveLength(3);
+  });
+
+  it('rejects expired-room access and cascades all chat data when the room is cleaned', async () => {
+    await chat('待清理消息'); await time(86400001);
+    await expect(chat()).rejects.toThrow('expired'); await expect(chat('过期后')).rejects.toThrow('expired');
+    await db.query('DELETE FROM public.gomoku_rooms WHERE id=$1',[room]);
+    for (const table of ['gomoku_chat_messages','gomoku_chat_receipts','gomoku_chat_state']) {
+      expect((await db.query(`SELECT * FROM public.${table} WHERE room=$1`,[room])).rows).toHaveLength(0);
+    }
+  });
 });
 
 describe('game RPC on isolated PostgreSQL with controlled server clock', () => {
