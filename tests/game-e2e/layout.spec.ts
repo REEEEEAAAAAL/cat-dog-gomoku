@@ -43,6 +43,107 @@ async function fixture(page: Page) {
   return { state, refresh };
 }
 
+test('chat entry placement and panel screenshots for each device layout', async ({page}) => {
+  test.skip(!process.env.GOMOKU_LOCAL_SQL);
+  const {state,refresh}=await fixture(page);
+  state.chat={room:state.room,revision:3,messages:[
+    {id:'chat-1',seq:1,seat:1,text:'今天也来下一局吧。',at:Date.now()},
+    {id:'chat-2',seq:2,seat:2,text:'好呀，我已经准备好了。',at:Date.now()},
+    {id:'chat-3',seq:3,seat:2,text:'让我想一想下一步。',at:Date.now()},
+  ]};
+  state.moves.push({x:7,y:8,seat:1,color:1},{x:6,y:7,seat:2,color:2},{x:8,y:8,seat:1,color:1},{x:6,y:6,seat:2,color:2});
+  await page.route('**/rpc/gomoku_chat',route=>route.fulfill({json:state.chat}));
+  await refresh();
+  for (const size of [
+    {name:'phone-360',width:360,height:800}, {name:'phone-390',width:390,height:844},
+    {name:'tablet',width:768,height:1024}, {name:'desktop',width:1280,height:844}, {name:'compact',width:1024,height:675},
+  ]) {
+    await page.setViewportSize(size); await refresh();
+    await expect(page.locator('#chatToggle')).toBeVisible();
+    const rect=(id:string)=>page.locator(id).evaluate(e=>{
+      const r=e.getBoundingClientRect();return {...r.toJSON(),x:r.x+scrollX,y:r.y+scrollY,right:r.right+scrollX,bottom:r.bottom+scrollY};
+    });
+    const entry=await rect('#chatToggle'), card=await rect('#selfPlayer .player'), reactions=await rect('#reactions');
+    if(size.width<600){
+      await expect(page.locator('#selfPlayer .player > #chatToggle')).toHaveCount(1);
+      expect(entry.right).toBeLessThanOrEqual(card.right);expect(entry.y).toBeGreaterThanOrEqual(card.y);expect(entry.bottom).toBeLessThanOrEqual(card.bottom);
+    }else{
+      if(size.width<960){
+        const picker=await rect('.reaction-picker'),next=await rect('#nextReactions'),hint=await rect('#selectionHint');
+        expect(Math.abs(entry.y+entry.height/2-reactions.y-reactions.height/2)).toBeLessThanOrEqual(1);
+        expect(next.right).toBeLessThanOrEqual(entry.x);
+        expect(Math.abs(hint.x-(await rect('.board-wrap')).x)).toBeLessThan(1);
+        expect(picker.right).toBeLessThanOrEqual(entry.x);
+      } else expect(entry.y).toBeGreaterThanOrEqual(reactions.bottom);
+      if(size.width>=960){
+        const cancel=await rect('#cancel'),hint=await rect('#selectionHint');
+        expect(hint.x-cancel.right).toBeLessThanOrEqual(20);
+        const range=await page.locator('#selectionHint').evaluate(e=>{const r=document.createRange();r.selectNodeContents(e);const box=r.getBoundingClientRect();return {...box.toJSON(),right:box.right+scrollX};});
+        expect(range.right).toBeLessThanOrEqual(entry.x);
+        expect(range.height).toBeLessThanOrEqual(46);
+      }
+    }
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.evaluate(()=>window.scrollTo(0,0));
+    await page.screenshot({path:`test-results/chat-layout/${size.name}-entry.png`,fullPage:true});
+    await page.locator('#chatToggle').click(); await expect(page.locator('#chatMessages .chat-message')).toHaveCount(3);
+    await page.screenshot({path:`test-results/chat-layout/${size.name}-open.png`});
+    await page.locator('#chatClose').click();
+  }
+});
+
+test('chat reads stop for collapsed, idle and hidden panels and resume on interaction', async ({page}) => {
+  test.skip(!process.env.GOMOKU_LOCAL_SQL);
+  const {state,refresh}=await fixture(page);
+  state.chat={room:state.room,revision:0,messages:[]};
+  let reads=0;
+  await page.route('**/rpc/gomoku_chat',route=>{reads++;return route.fulfill({json:state.chat});});
+  await refresh();
+  await page.waitForTimeout(3100);expect(reads).toBe(0);
+  await page.locator('#chatToggle').click();await expect.poll(()=>reads).toBeGreaterThan(0);
+  await page.locator('#chatClose').click();
+  const closed=reads;await page.waitForTimeout(3100);expect(reads).toBe(closed);
+  await page.locator('#chatToggle').click();await expect.poll(()=>reads).toBeGreaterThan(closed);
+  await page.evaluate(()=>{const now=Date.now.bind(Date);Date.now=()=>now()+61000;});
+  const idle=reads;await page.waitForTimeout(3100);expect(reads).toBe(idle);
+  await page.locator('#chatInput').click();await expect.poll(()=>reads).toBeGreaterThan(idle);
+  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});document.dispatchEvent(new Event('visibilitychange'));});
+  const hidden=reads;await page.waitForTimeout(3100);expect(reads).toBe(hidden);
+  await page.evaluate(()=>{delete (document as unknown as Record<string,unknown>).hidden;document.dispatchEvent(new Event('visibilitychange'));});
+  await expect.poll(()=>reads).toBeGreaterThan(hidden);
+  await page.locator('#chatClose').click();state.phase='closed';await refresh();
+  await page.locator('#chatToggle').click();await page.locator('#chatInput').evaluate((e:HTMLTextAreaElement)=>{e.value='关闭后';e.dispatchEvent(new Event('input'));});
+  await expect(page.locator('#chatSend')).toBeDisabled();
+});
+
+test('portrait tablet keeps two action rows, scrollable reactions and an aligned final status row',async({page})=>{
+  test.skip(!process.env.GOMOKU_LOCAL_SQL);
+  const {state,refresh}=await fixture(page);
+  const rect=(id:string)=>page.locator(id).evaluate(e=>{const r=e.getBoundingClientRect();return {...r.toJSON(),y:r.y+scrollY,bottom:r.bottom+scrollY};});
+  for(const size of [{width:600,height:600},{width:600,height:960},{width:768,height:1024},{width:820,height:1180},{width:959,height:1024}]){
+    await page.setViewportSize(size);await refresh();
+    await expect(page.locator('#room')).toHaveAttribute('data-layout','stacked');
+    const board=await rect('.board-wrap'),hint=await rect('#selectionHint'),cancel=await rect('#cancel'),confirm=await rect('#confirm');
+    expect(hint.x).toBe(board.x);expect(confirm.right).toBe(board.right);expect(cancel.right).toBeLessThan(confirm.x);
+    expect(Math.abs(hint.y+hint.height/2-confirm.y-confirm.height/2)).toBeLessThan(1);
+    const reaction=await rect('#interactionControls'),chat=await rect('#chatToggle'),resign=await rect('#resign'),undo=await rect('#undo');
+    expect(reaction.x).toBe(board.x);expect(undo.right).toBe(board.right);
+    expect(reaction.right).toBeLessThan(chat.x);expect(chat.right).toBeLessThan(resign.x);expect(resign.right).toBeLessThan(undo.x);
+    for(const item of [reaction,chat,resign]) expect(Math.abs(item.y+item.height/2-undo.y-undo.height/2)).toBeLessThanOrEqual(1);
+    expect((await rect('#nextReactions')).right).toBeLessThanOrEqual(chat.x);
+    await page.locator('#reactions').evaluate(e=>{e.scrollLeft=0;});
+    await page.locator('#nextReactions').click();await expect.poll(()=>page.locator('#reactions').evaluate(e=>e.scrollLeft)).toBeGreaterThan(0);
+    await page.locator('#previousReactions').click();await expect.poll(()=>page.locator('#reactions').evaluate(e=>e.scrollLeft)).toBeLessThanOrEqual(1);
+    const rules=await rect('#rules'),art=await rect('#roomCompanions'),status=await rect('#connectionBar'),leave=await rect('#leave');
+    expect(rules.y).toBeGreaterThan(undo.bottom);expect(art.y).toBeGreaterThanOrEqual(rules.bottom);
+    expect(status.y).toBeGreaterThanOrEqual(art.bottom);expect(status.x).toBe(board.x);expect(leave.right).toBe(board.right);
+    expect(Math.abs(status.y+status.height/2-leave.y-leave.height/2)).toBeLessThan(1);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  }
+  state.phase='closed';await refresh();await page.locator('#homeReturn').click();
+  await expect(page.locator('#connectionBar')).toBeVisible();await expect(page.locator('#tabletFooter')).toBeHidden();
+});
+
 async function rightGeometry(page: Page) {
   return page.evaluate(() => ['opponentPlayer', 'selfPlayer', 'undo', 'resign', 'confirm', 'cancel', 'interactionControls', 'leave'].map(id => {
     const rect = document.getElementById(id)!.getBoundingClientRect();

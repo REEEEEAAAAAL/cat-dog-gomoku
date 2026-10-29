@@ -31,7 +31,7 @@
             <div id="opponentPlayer" class="players"></div>
             <div class="turn-bar" id="turnBar"><div><p id="gameStatus" role="status" aria-live="polite">等待对方加入</p><small id="turnHint">双方准备后开始</small></div><time id="clock" aria-label="当前回合剩余时间">01:00</time></div>
             <div id="rematchPanel" class="rematch-panel" role="status" hidden><p>对方邀请你再来一局喔😊</p><button id="acceptRematch" class="primary">同意，再来一局</button></div>
-            <div id="undoPanel" class="aside-block undo-panel" hidden><h2>戳戳，可以让我悔一步嘛？🥺</h2><p id="undoImpact"></p><p id="undoCountdown"></p><div class="button-row"><button id="acceptUndo" class="primary">同意悔棋</button><button id="denyUndo">不悔啦</button><button id="cancelUndo">取消申请</button></div></div>
+            <div id="undoPanel" class="aside-block undo-panel" hidden><h2>戳戳，可以让我悔一步嘛？🥺</h2><p id="undoImpact"></p><p id="undoCountdown"></p><div class="button-row"><button id="acceptUndo" class="primary">同意悔棋</button><button id="denyUndo">不悔啦</button><button id="cancelUndo">取消申请</button></div><button id="negotiationChatToggle" type="button" class="text-button">打开聊天</button></div>
             <div class="board-area" id="boardArea"><div class="board-wrap"><div id="board" class="board" role="grid" aria-label="15 乘 15 五子棋棋盘"></div><svg id="boardLines" viewBox="0 0 15 15" aria-hidden="true"></svg><svg id="winOverlay" viewBox="0 0 15 15" aria-hidden="true"></svg><div id="resultPanel" class="result-panel" role="status" hidden><div id="resultAvatar"></div><h2 id="resultTitle"></h2><p id="resultReason"></p><button id="dismissResult">收起，看看棋盘</button></div></div>
             <section id="replayArea" class="replay-area" aria-label="棋局回放" hidden>
               <div class="replay-row"><button id="reviewGame" class="text-button">🎬 回顾棋局</button><div id="replayTimeline" class="replay-timeline" hidden><input id="replayProgress" type="range" min="0" max="0" value="0" step="1" aria-label="回放进度"><button id="toggleReplayNumbers" class="replay-numbers-toggle" aria-pressed="true">隐藏步数</button><button id="exitReplay" class="text-button">退出回放</button></div></div>
@@ -39,7 +39,7 @@
             </section>
             <div id="moveControls" class="move-controls"><span id="selectionHint">点选交叉点，再确认落子</span><div class="action-cluster"><button id="confirm" class="primary" disabled>确认落子</button><button id="cancel" class="text-button" disabled>取消</button><button id="undo" disabled>申请悔棋</button><button id="resign" class="resign" disabled>认输</button></div></div></div>
             <div id="selfRow" class="self-row"><div id="selfPlayer" class="players self-player"></div></div>
-            <div id="mobileActions"><div id="interactionControls" class="interaction-controls"><div class="reaction-picker"><button id="previousReactions" class="reaction-arrow" type="button" aria-label="向左查看表情">‹</button><div id="reactions" class="reactions" role="group" aria-label="发送表情"></div><button id="nextReactions" class="reaction-arrow" type="button" aria-label="向右查看表情">›</button></div></div></div>
+            <div id="mobileActions"><div id="interactionControls" class="interaction-controls"><div class="reaction-picker"><button id="previousReactions" class="reaction-arrow" type="button" aria-label="向左查看表情">‹</button><div id="reactions" class="reactions" role="group" aria-label="发送表情"></div><button id="nextReactions" class="reaction-arrow" type="button" aria-label="向右查看表情">›</button></div><button id="chatToggle" type="button" aria-controls="chatPanel" aria-expanded="false" hidden>聊天</button></div></div>
           </div>
           <aside id="roomAside" class="room-aside">
             <div id="asideCore"><div id="asideTurn"></div><div id="asidePlayers"></div><div id="asideActivity"><div id="asideExtras"></div></div><div id="tabletNotices"></div><div id="desktopActions" class="desktop-actions" hidden></div></div>
@@ -52,7 +52,8 @@
             <div class="room-companions" id="roomCompanions" aria-hidden="true"><img src="./companions.svg" alt="" width="340" height="220" draggable="false" /></div>
           </aside>
         </section>
-        <div class="connection"><span id="connectionDot" class="connection-dot"></span><p id="notice" role="status" aria-live="polite">选一个身份，开一局吧！</p><button id="reconnect" class="text-button" hidden>重新连接</button><button id="retry" class="text-button" hidden>重试上次操作</button></div>
+        <div id="connectionBar" class="connection"><span id="connectionDot" class="connection-dot"></span><p id="notice" role="status" aria-live="polite">选一个身份，开一局吧！</p><button id="reconnect" class="text-button" hidden>重新连接</button><button id="retry" class="text-button" hidden>重试上次操作</button></div>
+        <div id="tabletFooter" class="tablet-footer" hidden></div>
       </main>
       <footer><span>分一点时间，陪TA下一局五子棋吧~</span><div class="footer-links"><a href="../gomoku-diag/">连接诊断</a><span class="footer-divider" aria-hidden="true"></span><a class="github-link" href="https://github.com/REEEEEAAAAAL/cat-dog-gomoku" target="_blank" rel="noopener noreferrer" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .8a11.2 11.2 0 0 0-3.54 21.83c.56.1.76-.24.76-.54v-2.1c-3.12.68-3.78-1.33-3.78-1.33-.51-1.3-1.25-1.65-1.25-1.65-1.02-.7.08-.69.08-.69 1.12.08 1.71 1.15 1.71 1.15 1 1.71 2.62 1.22 3.26.93.1-.72.39-1.22.71-1.5-2.49-.28-5.11-1.25-5.11-5.54 0-1.22.44-2.22 1.15-3-.12-.28-.5-1.42.11-2.96 0 0 .94-.3 3.08 1.15a10.7 10.7 0 0 1 5.6 0c2.14-1.45 3.08-1.15 3.08-1.15.61 1.54.23 2.68.11 2.96.72.78 1.15 1.78 1.15 3 0 4.3-2.62 5.25-5.12 5.53.4.35.76 1.03.76 2.08v3.12c0 .3.2.65.77.54A11.2 11.2 0 0 0 12 .8Z"/></svg></a></div></footer>
     </div>
@@ -61,6 +62,25 @@
     <dialog id="leaveDialog"><h2>要结束这个房间吗？</h2><p>双方都将无法继续本房间，进行中的对局会中止，不计输赢。</p><div class="button-row"><button id="stay">继续下棋</button><button id="confirmLeave" class="primary">关闭房间</button></div></dialog>
     <dialog id="undoDialog"><h2>申请悔棋</h2><p id="undoPreview"></p><p>需要对方同意。申请后暂时停止落子和计时，最多等待 30 秒。</p><div class="button-row"><button id="dismissUndo">继续下棋</button><button id="requestUndo" class="primary">发送申请</button></div></dialog>
     <dialog id="resignDialog" aria-labelledby="resignTitle" aria-describedby="resignPrompt"><h2 id="resignTitle">要认输吗？</h2><p id="resignPrompt">真的要认输嘛？<br>这局胜利就送给对方了喔🥺</p><div class="button-row"><button id="dismissResign" autofocus>取消</button><button id="confirmResign" class="resign">确认认输😭</button></div></dialog>
+    <section id="chatPanel" class="chat-panel" aria-labelledby="chatTitle" hidden>
+      <div class="chat-header"><h2 id="chatTitle">猫狗聊天室</h2><button id="chatClose" type="button" class="text-button">收起聊天</button></div>
+      <div class="chat-history">
+        <ol id="chatMessages" class="chat-messages" aria-label="聊天消息" tabindex="0"></ol>
+        <button id="chatLatest" type="button" hidden>查看最新</button>
+      </div>
+      <form id="chatForm">
+        <label for="chatInput" class="sr-only">聊天内容，最多 100 字</label>
+        <textarea id="chatInput" rows="2" placeholder="和对方说点什么…" aria-describedby="chatCount chatAvailability"></textarea>
+        <div class="chat-compose-footer">
+          <div class="chat-compose-meta">
+            <span id="chatCount">0/100 字</span>
+            <p id="chatAvailability"></p>
+          </div>
+          <button id="chatSend" type="submit">发送</button>
+        </div>
+      </form>
+      <p id="chatStatus" class="sr-only" role="status" aria-live="polite"></p>
+    </section>
     <script type="module" src="/../src/game/main.ts"></script>
   </body>
 </html>

@@ -72,7 +72,7 @@
 #room[data-layout="wide"] .room-companions img { display: block; inset: 8px; width: calc(100% - 16px); height: calc(100% - 16px); }
 #room[data-layout="wide"] .desktop-actions { order: initial; flex-shrink: 0; padding: 0; margin: 0; }
 #room[data-layout="wide"] .move-controls { align-items: flex-end; gap: 8px; }
-#room[data-layout="wide"] .move-controls > span { display: flex; justify-content: flex-end; align-items: center; min-height: 46px; font-size: 10px; }
+#room[data-layout="wide"] .move-controls > span { display: flex; justify-content: flex-end; align-items: flex-end; min-height: 46px; font-size: 10px; padding-bottom: 13px; }
 #room[data-layout="wide"] .move-controls > .action-cluster { gap: 12px; }
 #room[data-layout="wide"] .action-cluster #undo, #room[data-layout="wide"] .action-cluster #resign { grid-row: 1; }
 #room[data-layout="wide"] .action-cluster #confirm, #room[data-layout="wide"] .action-cluster #cancel { grid-row: 2; }
@@ -97,16 +97,31 @@
 #room[data-layout="stacked"] .player-name { font-size: 12px; }
 #room[data-layout="stacked"] .player-detail { font-size: 9px; gap: 4px; }
 #room[data-layout="stacked"] .room-aside { display: flex; flex-direction: column; }
-#room[data-layout="stacked"] .room-companions { display: block; width: 220px; height: 140px; align-self: center; }
+#room[data-layout="stacked"] .room-companions { display: block; width: 220px; height: 140px; margin: 12px auto; order: 10; }
 #room[data-layout="stacked"] .room-companions img { display: block; width: 100%; height: 100%; object-fit: contain; opacity: .82; }
-#room[data-layout="stacked"] .move-controls { padding-top: 21px; align-items: flex-start; }
+#room[data-layout="stacked"] .move-controls { padding-top: 21px; width: 100%; display: grid; grid-template-columns: minmax(0,1fr) max-content max-content max-content; gap: 16px; column-gap: clamp(6px,calc((var(--board-size) - 320px) / 12),16px); align-items: center; container-type: inline-size; }
 #room[data-layout="stacked"] .move-controls > span { display: flex; align-items: center; min-height: 46px; max-width: none; }
-#room[data-layout="stacked"] .move-controls > .action-cluster { gap: 16px; }
-#room[data-layout="stacked"] .action-cluster #confirm, #room[data-layout="stacked"] .action-cluster #undo { grid-column: 2; }
-#room[data-layout="stacked"] .action-cluster #cancel, #room[data-layout="stacked"] .action-cluster #resign { grid-column: 1; }
-#room[data-layout="stacked"] .interaction-controls { flex-direction: row; align-items: center; margin-top: 10px; gap: 10px; }
-#room[data-layout="stacked"] .interaction-controls .reactions { width: auto; }
-#room[data-layout="stacked"] .reactions button { width: 44px; }
+#room[data-layout="stacked"] .move-controls > .action-cluster { display: contents; }
+#room[data-layout="stacked"] .action-cluster #confirm { grid-column: 4; grid-row: 1; }
+#room[data-layout="stacked"] .action-cluster #cancel { grid-column: 3; grid-row: 1; }
+#room[data-layout="stacked"] .action-cluster #resign { grid-column: 3; grid-row: 2; }
+#room[data-layout="stacked"] .action-cluster #undo { grid-column: 4; grid-row: 2; }
+#room[data-layout="stacked"] #selectionHint { grid-column: 1 / 3; grid-row: 1; justify-content: flex-start; padding-right: 0; text-align: left; }
+#room[data-layout="stacked"] #chatToggle { grid-column: 2; grid-row: 2; align-self: center; min-width: 64px; }
+#room[data-layout="stacked"] #interactionControls { grid-column: 1; grid-row: 2; width: 100%; min-width: 0; margin: 0; display: flex; flex-direction: row; }
+#room[data-layout="stacked"] .reaction-picker { display: flex; align-items: center; justify-content: space-between; gap: 2px; width: 100%; min-width: 0; }
+#room[data-layout="stacked"] .reaction-arrow { display: block; flex: 0 0 24px; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--green); font-size: 24px; }
+#room[data-layout="stacked"] .interaction-controls .reactions { display: flex; flex-wrap: nowrap; width: auto; min-width: 0; flex: 0 0 min(373px,calc(round(down,calc(100% - 49px),47px) - 3px)); overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; touch-action: pan-x; scroll-snap-type: x mandatory; }
+#room[data-layout="stacked"] .reactions::-webkit-scrollbar { display: none; }
+#room[data-layout="stacked"] .reactions button { width: 44px; flex: 0 0 44px; scroll-snap-align: start; }
+#room[data-layout="stacked"] .tablet-footer { display: flex; align-items: center; gap: 16px; width: 100%; margin-top: 16px; order: 11; }
+#room[data-layout="stacked"] .tablet-footer .connection { flex: 1; min-width: 0; padding: 0; }
+#room[data-layout="stacked"] .tablet-footer .connection p { min-width: 0; }
+#room[data-layout="stacked"] .tablet-footer .leave { flex-shrink: 0; align-self: center; margin: 0; white-space: nowrap; }
+@container (max-width: 440px) {
+  #room[data-layout="stacked"] .action-cluster button { font-size: 14px; padding-inline: 8px; }
+  #room[data-layout="stacked"] #chatToggle { padding-inline: 8px; }
+}
 #room[data-layout="stacked"] #tabletNotices { order: -1; }
 #negotiationDialog { padding: 0; }
 #negotiationDialog .undo-panel { margin: 0; border: 0; }

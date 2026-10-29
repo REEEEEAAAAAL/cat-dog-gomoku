@@ -6,7 +6,7 @@ export function setupRoomLayout() {
   const origins = new Map<HTMLElement, Comment>();
   const movable = ['turnBar', 'opponentPlayer', 'selfPlayer', 'interactionControls',
     'moveControls', 'undoPanel', 'rematchPanel', 'applicationPanel',
-    'lobbyPanel', 'invitePanel', 'rules', 'roomCompanions'];
+    'lobbyPanel', 'invitePanel', 'rules', 'roomCompanions', 'chatToggle', 'connectionBar', 'leave', 'tabletFooter'];
   for (const id of movable) {
     const node = element(id);
     const marker = document.createComment(`${id} layout origin`);
@@ -46,12 +46,18 @@ export function setupRoomLayout() {
         move('roomCompanions', 'asideExtras');
         move('moveControls', 'desktopActions');
         move('interactionControls', 'moveControls');
+        move('chatToggle', 'moveControls');
       } else if (mode === 'stacked') {
         for (const id of ['opponentPlayer', 'selfPlayer']) move(id, 'compactPlayers');
         move('undoPanel', 'negotiationDialog');
         move('rematchPanel', 'tabletNotices');
+        move('interactionControls', 'moveControls');
+        move('chatToggle', 'moveControls');
       }
       if (mode !== 'phone') move('rules', 'playArea');
+      if (mode === 'stacked') {
+        move('tabletFooter', 'roomAside');
+      }
       if (mode !== 'phone') rules.open = false;
       if (focused instanceof HTMLElement && focused !== document.body && focused.isConnected) focused.focus({ preventScroll: true });
       previous = key;
@@ -77,8 +83,20 @@ export function setupRoomLayout() {
       if (mode === 'phone' && phase === 'waiting') move('lobbyPanel', 'readySlot');
       else restore('lobbyPanel');
     }
+    if (mode === 'phone') {
+      const card = element('selfPlayer').firstElementChild;
+      if (card && element('chatToggle').parentElement !== card) card.appendChild(element('chatToggle'));
+    }
+    const tabletActive = mode === 'stacked' && !room.hidden && !element('playArea').hidden;
+    element('tabletFooter').hidden = !tabletActive;
+    if (tabletActive) {
+      move('connectionBar', 'tabletFooter'); move('leave', 'tabletFooter');
+    } else { restore('connectionBar'); restore('leave'); }
     const dialog = element('negotiationDialog') as HTMLDialogElement;
     const negotiating = mode !== 'phone' && !room.hidden && !element('undoPanel').hidden;
+    const chatPanel = element('chatPanel');
+    const chatParent = negotiating ? dialog : document.body;
+    if (chatPanel.parentElement !== chatParent) chatParent.appendChild(chatPanel);
     if (negotiating && !dialog.open) dialog.showModal();
     else if (!negotiating && dialog.open) dialog.close();
   };

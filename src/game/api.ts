@@ -2,6 +2,8 @@ import cloudbase from '@cloudbase/js-sdk';
 import { fetchJsonWithTimeout } from '../../diagnostics/cloudbase/http';
 import { isReply, isInvitationInfo, rpcError } from './protocol';
 import type { Command, Reply, InvitationInfo } from './protocol';
+import { isChatSnapshot } from './chat-protocol';
+import type { ChatCommand, ChatSnapshot } from './chat-protocol';
 
 const env = import.meta.env.VITE_CLOUDBASE_ENV_ID as string | undefined;
 const accessKey = import.meta.env.VITE_CLOUDBASE_PUBLISHABLE_KEY as string | undefined;
@@ -17,18 +19,24 @@ export async function login(): Promise<void> {
   }
 }
 
-async function request(command: Command): Promise<unknown> {
+async function request(command: Command | ChatCommand, rpc = 'gomoku_command'): Promise<unknown> {
   if (!app) throw new Error('尚未配置云端环境');
   const session = await app.auth().getSession();
   const token = session.data.session?.access_token;
   if (!token || session.error) throw new Error('登录已失效，请重新连接');
-  const { response, body } = await fetchJsonWithTimeout(`https://${env}.api.tcloudbasegateway.com/v1/rdb/rest/rpc/gomoku_command`, {
+  const { response, body } = await fetchJsonWithTimeout(`https://${env}.api.tcloudbasegateway.com/v1/rdb/rest/rpc/${rpc}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify(command),
   }, 10_000);
   if (!response.ok) {
     throw rpcError(body);
   }
+  return body;
+}
+
+export async function sendChat(command: ChatCommand): Promise<ChatSnapshot> {
+  const body = await request(command, 'gomoku_chat');
+  if (!isChatSnapshot(body)) throw new Error('聊天数据不完整，请重试');
   return body;
 }
 

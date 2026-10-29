@@ -9,6 +9,7 @@ import { errorMessage, reactions, RpcError } from './protocol';
 import type { Action, Command, Reaction, Reply, Snapshot, InvitationInfo } from './protocol';
 import { GameAudio } from './audio';
 import { SoundEvents } from './sound-events';
+import { RoomChat } from './chat';
 
 const el = (id: string) => document.getElementById(id)!;
 const button = (id: string) => el(id) as HTMLButtonElement;
@@ -33,6 +34,7 @@ button('previousReactions').onclick = () => el('reactions').scrollBy({ left:-(el
 button('nextReactions').onclick = () => el('reactions').scrollBy({ left:el('reactions').clientWidth + 3, behavior:'smooth' });
 if (typeof CSS !== 'undefined' && typeof CSS.registerProperty === 'function') document.documentElement.classList.add('smooth-turn');
 const client = createId();
+const chat = new RoomChat(client);
 const roomPattern = /^(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[a-f0-9]{10})$/i;
 let storedRoom = localStorage.getItem('gomoku.room') || '';
 const invitation = location.hash.slice(1);
@@ -152,6 +154,8 @@ function renderClock() {
 }
 
 function playerElements(s: Snapshot) {
+  const chatToggle = el('chatToggle');
+  if (el('selfPlayer').contains(chatToggle)) el('interactionControls').appendChild(chatToggle);
   el('opponentPlayer').replaceChildren(); el('selfPlayer').replaceChildren();
   for (let index = 0; index < 2; index++) {
     const p = s.players[index]; const seat = index + 1;
@@ -231,6 +235,8 @@ function seekReplay(step: number) {
 }
 
 function render() {
+  const chatFocused = document.activeElement === el('chatToggle');
+  chat.update(snapshot, connected && !superseded && !document.hidden);
   el('entryPanel').classList.toggle('invited', invited);
   el('joinTitle').hidden = !invited;
   el('invitationRole').hidden = !invited;
@@ -332,6 +338,7 @@ function render() {
   el('selectionHint').textContent = selection ? `已选 ${String.fromCharCode(65 + selection.x)}${selection.y + 1}，确认后才落子` : '点选交叉点，再确认落子';
   renderReplay(); renderBoard(); renderClock();
   updateRoomLayout(s.phase);
+  if (chatFocused) button('chatToggle').focus({ preventScroll: true });
 }
 
 function apply(reply: Reply, timely: boolean) {

@@ -1,4 +1,6 @@
 import type { Move, Point, Seat } from './rules';
+import type { ChatSnapshot } from './chat-protocol';
+import { isChatSnapshot } from './chat-protocol';
 
 export type Phase = 'waiting' | 'running' | 'paused' | 'finished' | 'closed';
 export type Action = 'create' | 'apply' | 'connect' | 'snapshot' | 'sync' | 'approve' | 'reject' | 'ready' | 'move' | 'rematch' | 'leave'
@@ -16,6 +18,7 @@ export interface UndoRequest { id: string; seat: Seat; target: string; removeCou
 export interface Player { name: string; animal: 'dog' | 'cat'; ready: boolean; online: boolean; synced: boolean; undoLeft: number }
 export interface Pending { pending: true; room: string; code: string; serverNow: number; applicationId: string | null; withdrawn?: boolean }
 export interface Snapshot {
+  chat?: ChatSnapshot;
   pending: false;
   room: string;
   code: string;
@@ -70,7 +73,8 @@ const player = (value: unknown): value is Player => object(value) && typeof valu
 export function isReply(value: unknown): value is Reply {
   if (!object(value) || typeof value.room !== 'string' || typeof value.code !== 'string' || !number(value.serverNow)) return false;
   if (value.pending === true) return value.withdrawn === true ? value.applicationId === null : typeof value.applicationId === 'string';
-  return value.pending === false && seat(value.seat) && number(value.version) && typeof value.gameId === 'string'
+  return value.pending === false && (value.chat === undefined || (isChatSnapshot(value.chat) && value.chat.room === value.room))
+    && seat(value.seat) && number(value.version) && typeof value.gameId === 'string'
     && number(value.round) && ['waiting', 'running', 'paused', 'finished', 'closed'].includes(String(value.phase))
     && seat(value.blackSeat) && seat(value.turnSeat) && Array.isArray(value.moves) && value.moves.length <= 225
     && value.moves.every(m => point(m) && object(m) && seat(m.seat) && seat(m.color))
@@ -93,6 +97,8 @@ export function isReply(value: unknown): value is Reply {
 }
 
 const messages: Record<string, string> = {
+  invalid_chat: '请输入 1～100 字的非空白文字', chat_rate_limit: '发送过快，请稍后重试（每 2 秒一条，每分钟最多 10 条）',
+  chat_id_conflict: '消息编号冲突，请重新进入房间核对',
   not_found: '没有找到房间，请核对房间码', expired: '房间已过期，请重新创建', room_full: '房间已有两位玩家',
   forbidden: '尚未获得房间访问权限，请重新申请加入', unauthorized: '登录已失效，请重新连接',
   application_pending: '已有一位玩家申请加入，请稍后再试', invalid_name: '昵称请输入 1～12 个字符',

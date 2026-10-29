@@ -1,6 +1,6 @@
 import cloudbase from '@cloudbase/js-sdk';
 import { fetchJsonWithTimeout } from './http';
-import '../../src/client/style.css';
+import './style.css';
 
 type Phase = 'waiting' | 'running' | 'paused' | 'timeout' | 'aborted';
 type Action = 'join' | 'snapshot' | 'pulse' | 'start';
