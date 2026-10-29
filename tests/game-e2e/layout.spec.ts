@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { Snapshot } from '../../src/game/protocol';
 
+test.use({ launchOptions: { args: ['--enable-smooth-scrolling'] } });
+
 const sizes = [
   { name: 'desktop', width: 1280, height: 844, mode: 'wide' },
   { name: 'large-desktop', width: 1920, height: 1080, mode: 'wide' },
@@ -42,6 +44,104 @@ async function fixture(page: Page) {
   };
   return { state, refresh };
 }
+
+test('reaction paging follows visible bounds through smooth scrolling and resizing', async ({ page }) => {
+  test.skip(!process.env.GOMOKU_LOCAL_SQL);
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  await fixture(page);
+  const strip = page.locator('#reactions'), previous = page.locator('#previousReactions'), next = page.locator('#nextReactions');
+  const metrics = () => strip.evaluate(e => {
+    const box = e.getBoundingClientRect();
+    return { left: e.scrollLeft, max: e.scrollWidth - e.clientWidth, width: e.clientWidth,
+      first: e.firstElementChild!.getBoundingClientRect().left - box.left,
+      last: e.lastElementChild!.getBoundingClientRect().right - box.right };
+  });
+  for (const size of [{width:600,height:600},{width:600,height:960},{width:768,height:1024},
+    {width:820,height:1180},{width:959,height:1024},{width:1024,height:675},{width:1280,height:844},{width:1920,height:1080}]) {
+    await page.setViewportSize(size);
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await strip.evaluate(e => e.scrollTo({left:0,behavior:'instant'}));
+    await expect(previous).toBeDisabled();
+    await expect(next).toBeEnabled();
+    await expect(previous).toHaveCSS('color', 'rgb(97, 116, 108)');
+    await expect(next).toHaveCSS('color', 'rgb(52, 120, 106)');
+    const initial = await metrics();
+    expect(initial.first).toBeCloseTo(0, 0);
+    const samples = await strip.evaluate(async e => {
+      const values: number[] = [];
+      document.getElementById('nextReactions')!.click();
+      for (let frame = 0; frame < 45; frame++) {
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        values.push(e.scrollLeft);
+        if (frame === 3) document.getElementById('nextReactions')!.click();
+      }
+      return values;
+    });
+    expect(samples.some(value => value > 0 && value < initial.max - 1), JSON.stringify({size,initial,samples})).toBe(true);
+    for (let i = 1; i < samples.length; i++) {
+      expect(samples[i]).toBeGreaterThanOrEqual(samples[i - 1] - 1);
+      expect(samples[i]).toBeLessThanOrEqual(initial.max + 1);
+    }
+    for (let count = 0; count < 8 && await next.isEnabled(); count++) {
+      await next.click();
+      await expect.poll(async () => {
+        const a = await metrics();
+        await page.waitForTimeout(100);
+        return Math.abs((await metrics()).left - a.left);
+      }).toBeLessThanOrEqual(1);
+    }
+    await expect(next).toBeDisabled();
+    await expect(previous).toHaveCSS('color', 'rgb(52, 120, 106)');
+    await expect(next).toHaveCSS('color', 'rgb(97, 116, 108)');
+    const end = await metrics();
+    expect(end.left).toBeCloseTo(end.max, 0);
+    expect(Math.abs(end.last)).toBeLessThanOrEqual(1);
+    expect(end.first).toBeLessThan(0);
+    await next.evaluate((e: HTMLButtonElement) => e.click());
+    expect((await metrics()).left).toBe(end.left);
+    await expect(previous).toBeEnabled();
+    await previous.click();
+    await expect(next).toBeEnabled();
+    for (let count = 0; count < 8 && await previous.isEnabled(); count++) await previous.evaluate((e: HTMLButtonElement) => e.click());
+    await expect(previous).toBeDisabled();
+    await expect.poll(async () => (await metrics()).first).toBeCloseTo(0, 0);
+    const emoji = (await strip.locator('button').first().boundingBox())!;
+    for (const arrow of [previous, next]) {
+      const icon = (await arrow.locator('svg').boundingBox())!;
+      expect(Math.abs(icon.y + icon.height / 2 - emoji.y - emoji.height / 2 - 2)).toBeLessThan(0.5);
+    }
+    if (size.width >= 960) {
+      const tip = await page.locator('#nextReactions svg').boundingBox();
+      const chat = await page.locator('#chatToggle').boundingBox();
+      expect(Math.abs(tip!.x + tip!.width - chat!.x - chat!.width)).toBeLessThan(0.5);
+      const leave = (await page.locator('#leave').boundingBox())!;
+      expect(leave.y - chat!.y - chat!.height).toBeLessThanOrEqual(16);
+      expect(leave.y - chat!.y - chat!.height).toBeGreaterThanOrEqual(8);
+      const leftIcon = (await previous.locator('svg').boundingBox())!, bar = (await strip.boundingBox())!;
+      expect(Math.abs(bar.x - leftIcon.x - leftIcon.width - (tip!.x - bar.x - bar.width))).toBeLessThan(1);
+    }
+  }
+  await next.click();
+  await page.setViewportSize({width:600,height:960});
+  await expect.poll(async () => (await metrics()).left <= (await metrics()).max + 1).toBe(true);
+  await strip.evaluate(e => e.scrollTo({left:47,behavior:'instant'}));
+  await expect(previous).toBeEnabled(); await expect(next).toBeEnabled();
+  await strip.evaluate(e => e.scrollTo({left:e.scrollWidth,behavior:'instant'}));
+  await expect(next).toBeDisabled();
+  for (const width of [320,360,390,430,599]) {
+    await page.setViewportSize({width,height:900});
+    await expect(previous).toBeHidden(); await expect(next).toBeHidden();
+    expect((await metrics()).max).toBe(0);
+    for (const item of await strip.locator('button').all()) await expect(item).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await page.setViewportSize({width:768,height:1024});
+  await expect(previous).toBeDisabled(); await expect(next).toBeEnabled();
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await next.click();
+  await expect(next).toBeDisabled();
+  expect(Math.abs((await metrics()).last)).toBeLessThanOrEqual(1);
+});
 
 test('chat entry placement and panel screenshots for each device layout', async ({page}) => {
   test.skip(!process.env.GOMOKU_LOCAL_SQL);
@@ -137,6 +237,7 @@ test('portrait tablet keeps two action rows, scrollable reactions and an aligned
     const rules=await rect('#rules'),art=await rect('#roomCompanions'),status=await rect('#connectionBar'),leave=await rect('#leave');
     expect(rules.y).toBeGreaterThan(undo.bottom);expect(art.y).toBeGreaterThanOrEqual(rules.bottom);
     expect(status.y).toBeGreaterThanOrEqual(art.bottom);expect(status.x).toBe(board.x);expect(leave.right).toBe(board.right);
+    expect((await rect('#tabletFooter')).y-art.bottom).toBe(16);
     expect(Math.abs(status.y+status.height/2-leave.y-leave.height/2)).toBeLessThan(1);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   }

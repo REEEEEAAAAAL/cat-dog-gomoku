@@ -10,6 +10,7 @@ import type { Action, Command, Reaction, Reply, Snapshot, InvitationInfo } from 
 import { GameAudio } from './audio';
 import { SoundEvents } from './sound-events';
 import { RoomChat } from './chat';
+import { setupReactionPicker } from './reaction-picker';
 
 const el = (id: string) => document.getElementById(id)!;
 const button = (id: string) => el(id) as HTMLButtonElement;
@@ -30,8 +31,6 @@ window.addEventListener('storage', event => {
 });
 renderSound();
 const updateRoomLayout = setupRoomLayout();
-button('previousReactions').onclick = () => el('reactions').scrollBy({ left:-(el('reactions').clientWidth + 3), behavior:'smooth' });
-button('nextReactions').onclick = () => el('reactions').scrollBy({ left:el('reactions').clientWidth + 3, behavior:'smooth' });
 if (typeof CSS !== 'undefined' && typeof CSS.registerProperty === 'function') document.documentElement.classList.add('smooth-turn');
 const client = createId();
 const chat = new RoomChat(client);
@@ -649,6 +648,7 @@ for (const [id, emoji] of Object.entries(reactions)) {
   node.setAttribute('aria-label', `发送${reactionNames[id as Reaction]}表情`); node.dataset.emoji = id;
   node.onclick = () => { void run(() => mutate('emoji', { emoji: id })); }; el('reactions').appendChild(node);
 }
+setupReactionPicker(el('reactions'), button('previousReactions'), button('nextReactions'));
 button('cancelApplication').onclick = () => { void run(async () => {
   try {
     await exchange(command('withdraw', { application: applicationId })); home(); notice('已撤回加入申请。');

@@ -15,12 +15,13 @@ The hosted game uses a CloudBase prepaid environment with limited validity and q
 - Server-managed 60-second turns, disconnect pauses, and recovery after refresh. A five-minute unresolved disconnect ends the round without a winner.
 - Negotiated undo, up to two successful uses per player per round; both players review the affected stones before approval.
 - Resignation at any time after a round starts, with confirmation and a server-persisted result; no opponent approval is needed.
-- Review the finished round on the same board with a progress slider and four controls: start, previous, next, and end. Toggle move numbers and follow the highlighted current move with player and color labels. Replay is local and independent for each player; undone moves are excluded and past rounds are not permanently archived.
-- Rematches with swapped colors, eight fixed reactions, and local sound effects with a persistent mute setting. A short opening cue plays when each new game starts; restored or stale openings stay silent.
-- Both players hear a progressively faster warning during the active turn's final ten seconds. It follows each client's displayed countdown, respects mute and browser audio activation, and stops on pause, reset, turn change, or game end. Recovery resumes from the current time without replaying missed beeps.
+- Review the finished round with a timeline, move numbers, and step controls. Each player browses independently; undone moves are excluded and past rounds are not permanently archived.
+- Rematches with swapped colors, eight fixed reactions, and sound effects with a persistent mute setting, including an accelerating warning during the final ten seconds of a turn.
 - Room text chat for seated players, with unread indicators and retryable sends. Messages are limited to 100 characters; the latest 50 survive refresh and rematches.
 
 There is no matchmaking, spectator mode, or computer opponent. An invitation grants permission to apply, not ownership of a player's seat. Returning players use the same browser session; another browser cannot take over their identity. Leaving closes the room for both players, and rooms expire after 24 hours.
+
+The responsive interface adapts the board, player cards, and controls to phones, tablets, desktops, and low-height windows. Chat opens in an overlay, keeping the board available during conversation.
 
 ## Design
 
@@ -36,15 +37,15 @@ The maintained deployment uses CloudBase PostgreSQL and HTTP polling; PostgreSQL
 
 ## Text chat
 
-Text chat is available in the hosted game after both players have taken their seats. Open **聊天** in your player card on a phone, or below the reactions on desktop. Enter sends, Shift+Enter adds a line, and the Send button supports touch input; selecting text with an input method does not send it.
+Open **聊天** after both players have taken their seats. Enter sends, Shift+Enter adds a line, and the Send button supports touch input; selecting text with an input method does not send it.
 
-An unread count and soft green button indicate new messages. Messages remain unread while you browse older messages or the page is hidden, and clear once the latest messages are visible. New messages follow the bottom when you are already there; otherwise your reading position stays in place. The floating down-arrow returns to the latest message, and sending your own message also scrolls there.
+Unread indicators remain until the latest messages are visible. New messages preserve your position while you browse history; use the down-arrow to return to the latest message.
 
 Each message allows 100 Unicode code points. The server retains the latest 50 messages across refreshes and rematches in the same room; each player can send once every two seconds and at most ten times per minute. An unconfirmed send can be retried without duplication. Room expiration blocks further access; deletion of a room also removes its chat data. There are no background push notifications.
 
 ## Run locally
 
-Use Node.js 22 or newer and npm; development has been verified on Node.js 24.
+Use Node.js 22 or newer and npm.
 
 ```sh
 npm ci
@@ -66,10 +67,6 @@ npm run dev
 
 This requires a PostgreSQL environment with anonymous login, an allowed web origin, and the migrations below. The current client configures the Shanghai region. Vite variables are embedded in the browser bundle: use only a frontend publishable key, never management credentials.
 
-The game layout responds to available width and height. Desktop and wide landscape windows place both player cards and the timer to the right of the board; portrait tablets and medium windows place the cards side by side above it. Low-height windows use a compact header and tighter spacing to preserve board space, with scrolling for crowded status panels. Replay and collapsible rules sit below the board; wide layouts keep player cards and actions stable as room states change, and show the illustration only when space permits. Phones retain touch preview and stacked player cards, with confirm/undo on the right and cancel/resign on the left. Replay navigation stays on one row, and invitation buttons keep their size when showing copy success.
-
-Chat opens in a collapsible overlay without resizing the board, with an entry in the player card on phones and near the game controls on larger screens.
-
 ## Tests and builds
 
 ```sh
@@ -89,11 +86,11 @@ npm run test:game-page
 Remove-Item Env:GOMOKU_LOCAL_SQL
 ```
 
-On macOS/Linux, use `GOMOKU_LOCAL_SQL=1 GOMOKU_BROWSER=chrome npm run test:game-page`. Local game tests block CloudBase requests and cover two-player play, lost acknowledgements, refresh, undo, invitations, audio, and responsive controls. They do not validate cloud authentication or physical mobile devices. Screenshots and failures go to the ignored `test-results/` directory. `tests/game-e2e/layout.spec.ts` uses controlled snapshots to check viewports, state changes, button visibility, and layout stability; these checks do not replace two-client SQL regression tests, physical-device testing, or actual browser zoom acceptance.
+On macOS/Linux, use `GOMOKU_LOCAL_SQL=1 GOMOKU_BROWSER=chrome npm run test:game-page`. Browser tests cover two-player games, lost acknowledgements, refresh recovery, undo, invitations, chat, audio, and responsive controls. Layout tests use controlled snapshots to exercise viewport and state transitions. Local tests block CloudBase requests; cloud authentication and physical-device behavior require separate testing. Screenshots and failures go to the ignored `test-results/` directory.
 
 Live tests are opt-in and create rooms and anonymous sessions in the chosen environment. Set `GOMOKU_URL` to its full `/gomoku/` URL, or set `GOMOKU_LIVE_LOCAL=1` to use a built local preview with your configured backend. Clear `GOMOKU_LOCAL_SQL` first. `GOMOKU_LONG_TEST=1` additionally enables the five-minute absence case. `npm run test:cloudbase-page` checks the separate diagnostic page; its public tests require `CLOUDBASE_DIAGNOSTIC_URL`.
 
-Scripts call Node entrypoints directly to support Windows checkout paths containing `&`. The CloudBase SDK currently produces a Vite large-chunk advisory; the build still succeeds.
+The CloudBase SDK may produce a Vite large-chunk advisory without failing the build.
 
 ## Deploy
 
@@ -127,7 +124,7 @@ Invitations use URL fragments and need no custom server routing. Save the previo
 
 ## Screenshots
 
-Real screenshots from the hosted game with two independent anonymous players. Tablet and phone sizes are simulated browser viewports; the phone images show the full page.
+Game views at representative browser viewport sizes. Phone and replay images show the full page.
 
 Desktop (1280×844), portrait tablet (768×1024), and phone (390×844).
 
@@ -139,7 +136,7 @@ Compact layout in a low-height window (1024×675).
 
 <img src="docs/screenshots/compact.png" alt="Low-height layout with a compact header and the board beside player controls" width="700" />
 
-Post-game replay at move 24 of a 26-move round, showing move numbers, the current-move highlight, the progress slider, and all four navigation controls.
+Post-game replay with move numbers and timeline controls.
 
 <img src="docs/screenshots/desktop-replay.png" alt="Desktop replay at move 24 of 26 with numbered stones and navigation controls" width="700" />
 
