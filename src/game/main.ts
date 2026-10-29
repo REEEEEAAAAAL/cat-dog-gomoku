@@ -127,12 +127,25 @@ function canMove() {
     && snapshot.turnDeadline !== null && snapshot.turnDeadline > serverAtReceipt + performance.now() - lastReceiptAt;
 }
 
+function clockRemaining(s: Snapshot, now: number) {
+  return s.phase === 'running' && s.turnDeadline !== null ? Math.max(0, s.turnDeadline - now)
+    : s.phase === 'finished' && s.reason === 'five' ? s.moves.at(-1)?.remainingMs ?? s.remainingMs : s.remainingMs;
+}
+
+function updateCountdownSound() {
+  const s = snapshot, elapsed = performance.now() - lastReceiptAt;
+  const running = s && s.phase === 'running' && s.turnDeadline !== null && !s.undoRequest
+    && connected && elapsed < 15000 && s.players.every(player => player.online && player.synced);
+  audio.updateCountdown(running ? `${s.room}:${s.gameId}:${s.turnSeat}:${s.turnDeadline}` : null,
+    running ? clockRemaining(s, serverAtReceipt + elapsed) : 0);
+}
+
 function renderClock() {
+  updateCountdownSound();
   const s = snapshot;
   if (!s) return;
   const now = serverAtReceipt + performance.now() - lastReceiptAt;
-  const ms = s.phase === 'running' && s.turnDeadline !== null ? Math.max(0, s.turnDeadline - now)
-    : s.phase === 'finished' && s.reason === 'five' ? s.moves.at(-1)?.remainingMs ?? s.remainingMs : s.remainingMs;
+  const ms = clockRemaining(s, now);
   el('clock').textContent = s.phase === 'waiting' ? '01:00' : clockText(ms);
   el('clock').classList.toggle('urgent', s.phase === 'running' && ms <= 10000);
   if (s.phase === 'paused' && s.offlineDeadline !== null) {
@@ -368,9 +381,10 @@ function apply(reply: Reply, timely: boolean) {
     }
   }
   const sounds = soundEvents.observe(reply, wasConnected && !document.hidden && performance.now() - lastReceiptAt < 15000);
-  audio.play(sounds.filter(sound => sound !== 'start' || timely));
   snapshot = reply; pending = false; room = reply.room;
   serverAtReceipt = reply.serverNow; lastReceiptAt = performance.now();
+  updateCountdownSound();
+  audio.play(sounds.filter(sound => sound !== 'start' || timely));
   if (reply.phase === 'closed') forgetRoom(reply.room);
   else { storedRoom = room; localStorage.setItem('gomoku.room', room); }
   history.replaceState(null, '', `#${room}`);
@@ -699,7 +713,7 @@ window.setInterval(() => {
   lastScheduledPollAt = now;
   void poll();
 }, 1000);
-window.setInterval(renderClock, 250);
+window.setInterval(renderClock, 50);
 if (roomPattern.test(invitation)) {
   input('roomInput').value = invitation;
   if (invitation === storedRoom) void run(() => connect('connect', invitation));

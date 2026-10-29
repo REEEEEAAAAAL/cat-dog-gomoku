@@ -17,6 +17,7 @@ The hosted game uses a CloudBase prepaid environment with limited validity and q
 - Resignation at any time after a round starts, with confirmation and a server-persisted result; no opponent approval is needed.
 - Review the finished round on the same board with a progress slider and four controls: start, previous, next, and end. Toggle move numbers and follow the highlighted current move with player and color labels. Replay is local and independent for each player; undone moves are excluded and past rounds are not permanently archived.
 - Rematches with swapped colors, eight fixed reactions, and local sound effects with a persistent mute setting. A short opening cue plays when each new game starts; restored or stale openings stay silent.
+- Both players hear a progressively faster warning during the active turn's final ten seconds. It follows each client's displayed countdown, respects mute and browser audio activation, and stops on pause, reset, turn change, or game end. Recovery resumes from the current time without replaying missed beeps.
 - Room text chat for seated players, with unread indicators and retryable sends. Messages are limited to 100 characters; the latest 50 survive refresh and rematches.
 
 There is no matchmaking, spectator mode, or computer opponent. An invitation grants permission to apply, not ownership of a player's seat. Returning players use the same browser session; another browser cannot take over their identity. Leaving closes the room for both players, and rooms expire after 24 hours.

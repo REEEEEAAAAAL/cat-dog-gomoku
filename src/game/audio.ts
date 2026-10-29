@@ -16,6 +16,9 @@ export class GameAudio {
   private generation = 0;
   private tail = 0;
   private warned = false;
+  private countdownKey: string | null = null;
+  private countdownSource: OscillatorNode | null = null;
+  private nextCountdownAt = 0;
 
   constructor() {
     try { this.enabled = localStorage.getItem(storageKey) !== 'off'; }
@@ -62,6 +65,7 @@ export class GameAudio {
   }
 
   stop() {
+    this.stopCountdown();
     this.generation++;
     for (const source of this.sources) {
       try { source.stop(); } catch (error) { this.unavailable(error); }
@@ -69,9 +73,35 @@ export class GameAudio {
     this.sources.clear(); this.tail = 0;
   }
 
+  stopCountdown() {
+    this.countdownKey = null;
+    this.nextCountdownAt = 0;
+    if (this.countdownSource) {
+      try { this.countdownSource.stop(); } catch (error) { this.unavailable(error); }
+      this.sources.delete(this.countdownSource);
+      this.countdownSource = null;
+    }
+  }
+
+  updateCountdown(key: string | null, remainingMs = 0) {
+    if (!key || !Number.isFinite(remainingMs) || remainingMs <= 0 || remainingMs > 10000
+      || !this.enabled || document.hidden || this.context?.state !== 'running') {
+      this.stopCountdown(); return;
+    }
+    if (key !== this.countdownKey) { this.stopCountdown(); this.countdownKey = key; }
+    const now = performance.now();
+    if (now < this.nextCountdownAt) return;
+    // Schedule only the current pulse; delayed ticks never replay missed beats.
+    this.nextCountdownAt = now + 120 + 880 * (remainingMs / 10000) ** 3;
+    try {
+      this.countdownSource = this.tone(880, this.context.currentTime, .09, .48 * 10 ** (2.5 / 20), 'sine', 784);
+    } catch (error) { this.stopCountdown(); this.unavailable(error); }
+  }
+
   private track(source: Source, nodes: AudioNode[]) {
     this.sources.add(source);
     source.onended = () => {
+      if (this.countdownSource === source) this.countdownSource = null;
       this.sources.delete(source);
       source.disconnect(); nodes.forEach(node => node.disconnect());
     };
@@ -163,6 +193,7 @@ export class GameAudio {
     source.frequency.exponentialRampToValueAtTime(end, at + duration);
     source.connect(gain); this.track(source, [gain]);
     source.start(at); source.stop(at + duration + .01);
+    return source;
   }
 
   private sample(sound: 'start' | 'move' | 'undo', at: number) {

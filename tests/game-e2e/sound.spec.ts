@@ -98,6 +98,95 @@ async function play(page: Page, x: number, y: number) {
 }
 test.beforeEach(() => { test.skip(!process.env.GOMOKU_LOCAL_SQL, 'Sound flows use isolated local PostgreSQL only'); });
 
+test('countdown warning follows both displayed clocks and accelerates on desktop and touch', async ({ browser }) => {
+  const game = await pair(browser), { a, b } = game;
+  const deadline = Date.now() + 11500;
+  try {
+    for (const page of [a, b]) {
+      await page.route('**/rpc/gomoku_command', async route => {
+        const response = await route.fetch(), state = await response.json() as Snapshot;
+        await route.fulfill({ json: { ...state, turnDeadline: deadline } });
+      });
+      await poll(page);
+      expect((await voices(page)).filter(v => v.frequency === 880)).toHaveLength(0);
+    }
+    for (const page of [a, b]) {
+      await expect.poll(async () => (await voices(page)).filter(v => v.frequency === 880).length).toBeGreaterThan(0);
+      expect(await page.locator('#clock').textContent()).toMatch(/^00:(?:10|0\d)$/);
+    }
+    await expect(a.locator('#clock')).toHaveText('00:00');
+    for (const page of [a, b]) {
+      const pulses = (await voices(page)).filter(v => v.frequency === 880);
+      expect(pulses.length).toBeGreaterThan(35);
+      expect(pulses.length).toBeLessThan(48);
+      const gaps = pulses.slice(1).map((v, i) => v.at - pulses[i].at);
+      expect(gaps[0]).toBeGreaterThan(.8);
+      expect(gaps[pulses.findIndex(v => v.at - pulses[0].at >= 2)]).toBeLessThan(.65);
+      expect(gaps[pulses.findIndex(v => v.at - pulses[0].at >= 7)]).toBeLessThan(.22);
+      expect(gaps.at(-1)).toBeLessThan(.22);
+      // Snapshot receipts can trigger between the regular clock ticks.
+      expect(Math.min(...gaps)).toBeGreaterThan(.1);
+      const before = pulses.length;
+      await page.waitForTimeout(400);
+      expect((await voices(page)).filter(v => v.frequency === 880)).toHaveLength(before);
+    }
+    expect(game.errors).toEqual([]);
+  } finally { await Promise.all(game.contexts.map(c => c.close())); }
+});
+
+test('countdown cancels on mute, pause, reset, turn change, offline, hidden and result; recovery skips history', async ({ browser }) => {
+  const game = await pair(browser), { a } = game;
+  const override: Partial<Snapshot> = { turnDeadline: Date.now() + 8000 };
+  const pulses = async () => (await voices(a)).filter(v => v.frequency === 880);
+  const quiet = async () => {
+    const before = (await pulses()).length;
+    await a.waitForTimeout(450);
+    expect(await pulses()).toHaveLength(before);
+  };
+  const restart = async (ms = 8000) => {
+    override.phase = 'running'; override.turnDeadline = Date.now() + ms;
+    const before = (await pulses()).length;
+    await poll(a);
+    await expect.poll(async () => (await pulses()).length).toBeGreaterThan(before);
+  };
+  try {
+    await a.route('**/rpc/gomoku_command', async route => {
+      const response = await route.fetch(), state = await response.json() as Snapshot;
+      await route.fulfill({ json: { ...state, ...override } });
+    });
+    await restart();
+    await a.locator('#sound').click(); await quiet();
+    await a.locator('#sound').click();
+    await expect.poll(async () => (await pulses()).length).toBeGreaterThan(1);
+    override.phase = 'paused'; override.turnDeadline = null; override.remainingMs = 5000;
+    await poll(a); await quiet();
+    await restart();
+    override.turnDeadline = Date.now() + 60000; await poll(a); await quiet();
+    override.turnSeat = 2; await restart(3000);
+    override.turnSeat = 1; await restart(2500);
+    await a.evaluate(() => window.dispatchEvent(new Event('offline'))); await quiet();
+    await restart(1800);
+    await a.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await quiet();
+    await a.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await restart(1500);
+    await a.reload(); await expect(a.locator('#room')).toBeVisible();
+    expect(await pulses()).toHaveLength(0);
+    override.turnDeadline = Date.now() + 2500;
+    await a.locator('#clock').click(); await poll(a);
+    await expect.poll(async () => (await pulses()).length).toBeGreaterThan(0);
+    override.phase = 'finished'; override.turnDeadline = null; override.winner = 1; override.reason = 'timeout';
+    await poll(a); await quiet();
+    expect(game.errors).toEqual([]);
+  } finally { await Promise.all(game.contexts.map(c => c.close())); }
+});
+
 test('opening sounds once on both clients for first game and rematch; restore stays silent', async ({ browser }) => {
   const game = await pair(browser), { a, b } = game;
   try {
