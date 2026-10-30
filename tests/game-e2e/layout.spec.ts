@@ -115,8 +115,7 @@ test('reaction paging follows visible bounds through smooth scrolling and resizi
       const chat = await page.locator('#chatToggle').boundingBox();
       expect(Math.abs(tip!.x + tip!.width - chat!.x - chat!.width)).toBeLessThan(0.5);
       const leave = (await page.locator('#leave').boundingBox())!;
-      expect(leave.y - chat!.y - chat!.height).toBeLessThanOrEqual(16);
-      expect(leave.y - chat!.y - chat!.height).toBeGreaterThanOrEqual(8);
+      expect(leave.y - chat!.y - chat!.height).toBeCloseTo(14, 0);
       const leftIcon = (await previous.locator('svg').boundingBox())!, bar = (await strip.boundingBox())!;
       expect(Math.abs(bar.x - leftIcon.x - leftIcon.width - (tip!.x - bar.x - bar.width))).toBeLessThan(1);
     }
@@ -467,7 +466,33 @@ test('layout transitions preserve a single set of controls and narrow phone plac
     await page.setViewportSize(size);
     const phone = size.width < 600;
     await expect(page.locator('#room')).toHaveAttribute('data-layout', phone ? 'phone' : size.width >= 960 || size.width >= 800 && size.height <= 700 ? 'wide' : 'stacked');
-    for (const id of ['confirm', 'cancel', 'undo', 'resign', 'opponentPlayer', 'selfPlayer', 'replayArea']) await expect(page.locator(`#${id}`)).toHaveCount(1);
+    for (const id of ['confirm', 'cancel', 'undo', 'resign', 'opponentPlayer', 'selfPlayer', 'replayArea', 'leave', 'closeRoom']) await expect(page.locator(`#${id}`)).toHaveCount(1);
+    const leave = (await page.locator('#leave').boundingBox())!;
+    const close = (await page.locator('#closeRoom').boundingBox())!;
+    expect(close.y).toBeGreaterThanOrEqual(leave.y + leave.height + 8);
+    expect(close.width).toBeCloseTo(leave.width, 0);
+    expect(close.x).toBeCloseTo(leave.x, 0);
+    const tone = await page.locator('#leave').evaluate(e => {
+      const leaveStyle = getComputedStyle(e), chatStyle = getComputedStyle(document.getElementById('chatToggle')!);
+      return { leaveBackground: leaveStyle.backgroundColor, chatBackground: chatStyle.backgroundColor, leaveColor: leaveStyle.color };
+    });
+    expect(tone.leaveBackground).not.toBe(tone.chatBackground);
+    expect(tone.leaveColor).toBe('rgb(52, 120, 106)');
+    if (await page.locator('#room').getAttribute('data-layout') === 'wide') {
+      const chat = (await page.locator('#chatToggle').boundingBox())!;
+      const status = (await page.locator('#connectionBar').boundingBox())!;
+      const rules = (await page.locator('#rules').boundingBox())!;
+      expect(leave.width).toBeCloseTo(chat.width, 0);
+      expect(close.y - leave.y - leave.height, JSON.stringify({ size, chat, leave, close, status })).toBeCloseTo(leave.y - chat.y - chat.height, 0);
+      expect(status.y + status.height).toBeCloseTo(close.y + close.height, 0);
+      expect(status.y).toBeGreaterThanOrEqual(rules.y + rules.height + 8);
+      await page.locator('#rules > summary').click();
+      const openRules = (await page.locator('#rules').boundingBox())!;
+      const openStatus = (await page.locator('#connectionBar').boundingBox())!;
+      expect(openStatus.y).toBeGreaterThanOrEqual(openRules.y + openRules.height + 8);
+      await page.locator('#rules > summary').click();
+      if (size.width === 1280) await page.screenshot({ path: 'test-results/screenshots/room-buttons-aligned-desktop.png', fullPage: true });
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     if (phone) {
       const [board, opponent, self] = await geometry(page);

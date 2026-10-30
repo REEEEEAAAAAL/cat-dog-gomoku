@@ -135,6 +135,48 @@ async function play(page: Page, x: number, y: number, touch = false) {
 
 async function finish(contexts: BrowserContext[]) { await Promise.all(contexts.map(c => c.close())); }
 
+test('leaving returns home without closing and closing still requires confirmation', async ({ browser }) => {
+  test.skip(!process.env.GOMOKU_LOCAL_SQL);
+  const { contexts, a, b, errors, state } = await pair(browser);
+  try {
+    const code = await a.locator('#roomCode').textContent();
+    const commands: string[] = [];
+    a.on('request', request => {
+      if (request.url().endsWith('/rpc/gomoku_command')) commands.push(request.postDataJSON().p_action as string);
+    });
+    await play(state().turnSeat === state().seat ? a : b, 7, 7);
+    await expect(b.locator('#board .stone:not(.preview)')).toHaveCount(1);
+    await a.screenshot({ path: 'test-results/screenshots/room-buttons-desktop.png', fullPage: true });
+    await b.screenshot({ path: 'test-results/screenshots/room-buttons-phone.png', fullPage: true });
+    await a.locator('#leave').click();
+    await expect(a.locator('#home')).toBeVisible();
+    await expect(a.locator('#leaveDialog')).not.toBeVisible();
+    await expect(a.locator('#resume')).toBeVisible();
+    await a.reload();
+    await expect(a.locator('#home')).toBeVisible();
+    await a.locator('#resume').click();
+    await expect(a.locator('#roomCode')).toHaveText(code!);
+    await expect(a.locator('#board .stone:not(.preview)')).toHaveCount(1);
+    await expect(b.locator('#gameStatus')).not.toHaveText('房间已关闭');
+    expect(commands).not.toContain('leave');
+    await a.locator('#closeRoom').click();
+    await expect(a.locator('#leaveDialog')).toBeVisible();
+    await a.locator('#stay').click();
+    await expect(a.locator('#leaveDialog')).not.toBeVisible();
+    expect(commands).not.toContain('leave');
+    await a.locator('#closeRoom').click();
+    await a.locator('#confirmLeave').click();
+    await expect(a.locator('#gameStatus')).toHaveText('房间已关闭');
+    await expect(b.locator('#gameStatus')).toHaveText('房间已关闭');
+    expect(commands.filter(action => action === 'leave')).toHaveLength(1);
+    for (const page of [a, b]) {
+      await expect(page.locator('#leave')).toBeHidden();
+      await expect(page.locator('#closeRoom')).toBeHidden();
+    }
+    expect(errors).toEqual([]);
+  } finally { await finish(contexts); }
+});
+
 test('home supports narrow phones and desktop without overflow', async ({ page }) => {
   await enter(page);
   const icon = page.locator('link[rel="icon"]');
@@ -267,7 +309,7 @@ test('invitation follows presence while links and room codes preserve assigned i
     await expect(a.locator('#invitePanel')).toBeHidden();
     await resizeRoom(a, {width:390,height:1000});
     await a.screenshot({path:'test-results/screenshots/invitation-online-mobile.png',fullPage:true});
-    await a.locator('#leave').click(); await a.locator('#confirmLeave').click();
+    await a.locator('#closeRoom').click(); await a.locator('#confirmLeave').click();
     await expect(a.locator('#gameStatus')).toHaveText('房间已关闭');
     await expect(a.locator('#invitePanel')).toBeHidden();
     await b.reload();
@@ -355,7 +397,7 @@ test('two players complete a real game, approve entry, recover a lost acknowledg
     try { await enter(c, `./${new URL(a.url()).hash}`); await expect(c.locator('#notice')).toContainText('已有两位'); }
     finally { await outsider.close(); }
     expect(game.errors).toEqual([]);
-    await a.locator('#leave').click(); await a.locator('#confirmLeave').click();
+    await a.locator('#closeRoom').click(); await a.locator('#confirmLeave').click();
     await expect(b.locator('#gameStatus')).toHaveText('房间已关闭');
     for (const p of [a, b]) expect(await p.evaluate(() => localStorage.getItem('gomoku.room'))).toBeNull();
     let closedRequests = 0;
@@ -521,7 +563,7 @@ test('invalid rooms stop requesting and withdrawn or rejected applications stay 
     release(); await b.unrouteAll({ behavior: 'wait' });
     await expect(b.locator('#pendingPanel')).toBeHidden(); await expect(a.locator('#applicationPanel')).toBeHidden();
     requests = 0; await b.waitForTimeout(6500); expect(requests).toBe(0);
-    await a.locator('#leave').click(); await a.locator('#confirmLeave').click();
+    await a.locator('#closeRoom').click(); await a.locator('#confirmLeave').click();
     expect(errors).toEqual([]);
   } finally { await finish(contexts); }
 });
@@ -640,7 +682,7 @@ test('mouse previews and moves only once after confirmation and server acknowled
     await p.locator('#previousReactions').click();
     await expect.poll(() => reactions.evaluate(node => node.scrollLeft)).toBe(0);
     await p.screenshot({ path:'test-results/screenshots/game-desktop-actions.png', fullPage:true });
-    await p.locator('#leave').click();
+    await p.locator('#closeRoom').click();
     await expect(p.locator('#leaveDialog')).toBeVisible();
     await p.locator('#stay').click();
     await expect(p.locator('#leaveDialog')).not.toBeVisible();

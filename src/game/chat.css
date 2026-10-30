@@ -1,6 +1,6 @@
 #chatToggle{min-height:44px;min-width:88px;font-size:16px;padding:8px 12px;white-space:nowrap}
 #chatToggle.has-unread{background:#d9e9dc}
-#room[data-layout="wide"] #chatToggle{min-width:80px;width:max-content;padding-inline:8px;grid-column:2;grid-row:2;justify-self:end;align-self:center}
+#room[data-layout="wide"] #chatToggle{min-width:var(--room-action-width);width:var(--room-action-width);padding-inline:8px;grid-column:2;grid-row:2;justify-self:end;align-self:center}
 #room[data-layout="wide"] #selectionHint{justify-content:flex-start;padding-right:106px;min-width:0;line-height:1.4}
 #room:not([data-layout="wide"]) .interaction-controls{flex-direction:column;align-items:stretch;gap:8px}
 #room:not([data-layout="wide"]) #chatToggle{align-self:flex-end}

@@ -6,7 +6,7 @@ export function setupRoomLayout() {
   const origins = new Map<HTMLElement, Comment>();
   const movable = ['turnBar', 'opponentPlayer', 'selfPlayer', 'interactionControls',
     'moveControls', 'undoPanel', 'rematchPanel', 'applicationPanel',
-    'lobbyPanel', 'invitePanel', 'rules', 'roomCompanions', 'chatToggle', 'connectionBar', 'leave', 'tabletFooter'];
+    'lobbyPanel', 'invitePanel', 'rules', 'roomCompanions', 'chatToggle', 'connectionBar', 'leave', 'closeRoom', 'tabletFooter'];
   for (const id of movable) {
     const node = element(id);
     const marker = document.createComment(`${id} layout origin`);
@@ -90,8 +90,13 @@ export function setupRoomLayout() {
     const tabletActive = mode === 'stacked' && !room.hidden && !element('playArea').hidden;
     element('tabletFooter').hidden = !tabletActive;
     if (tabletActive) {
-      move('connectionBar', 'tabletFooter'); move('leave', 'tabletFooter');
-    } else { restore('connectionBar'); restore('leave'); }
+      move('connectionBar', 'tabletFooter'); move('leave', 'tabletFooter'); move('closeRoom', 'tabletFooter');
+    } else {
+      restore('leave');
+      if (mode === 'wide' && !room.hidden && !element('playArea').hidden) {
+        move('connectionBar', 'room'); move('closeRoom', 'room');
+      } else { restore('connectionBar'); restore('closeRoom'); }
+    }
     const dialog = element('negotiationDialog') as HTMLDialogElement;
     const negotiating = mode !== 'phone' && !room.hidden && !element('undoPanel').hidden;
     const chatPanel = element('chatPanel');

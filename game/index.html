@@ -48,7 +48,8 @@
             <div id="lobbySlot"><div id="lobbyPanel" class="aside-block"><h2 id="lobbyTitle">等另一个人来ing...</h2><p id="lobbyText">把邀请链接发给对方，房主确认后，双方准备就能开局。</p><p id="readyNotice" class="ready-notice" role="status" aria-live="polite" hidden>对方准备好了哦~</p><button id="ready" class="primary wide" disabled>准备好啦！</button><button id="rematch" class="primary wide" hidden>再来一局</button><button id="homeReturn" class="primary wide" hidden>返回首页</button></div></div>
             <div id="invitePanel" class="aside-block"><h2>邀请TA一起下棋吧~</h2><p>复制链接发给对方，也可以直接分享房间码。</p><div class="copy-actions"><button id="invite" aria-live="polite">复制邀请链接</button><button id="copyCode" aria-live="polite">复制房间码</button></div><p id="copyStatus" class="copy-status" role="status" aria-live="polite"></p><textarea id="copyFallback" rows="3" readonly aria-label="邀请链接，长按复制" hidden></textarea></div>
             <details id="rules" class="rules-block" open><summary>对局规则</summary><p>黑棋先手，横竖斜连成五颗或更多就赢。无禁手。</p><p>每步 60 秒，行棋超时判负。断线后暂停，超过 5 分钟未恢复则中止，不计输赢。</p><p>先点选预览，再确认落子。键盘方向键选点，回车预览后确认。</p></details>
-            <button id="leave" class="text-button leave">离开并关闭房间</button>
+            <button id="leave" class="text-button leave">离开房间</button>
+            <button id="closeRoom" class="text-button leave">关闭房间</button>
             <div class="room-companions" id="roomCompanions" aria-hidden="true"><img src="./companions.svg" alt="" width="340" height="220" draggable="false" /></div>
           </aside>
         </section>

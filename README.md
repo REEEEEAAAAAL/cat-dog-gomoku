@@ -19,7 +19,7 @@ The hosted game uses a CloudBase prepaid environment with limited validity and q
 - Rematches with swapped colors, eight fixed reactions, and sound effects with a persistent mute setting, including an accelerating warning during the final ten seconds of a turn.
 - Room text chat for seated players, with unread indicators and retryable sends. Messages are limited to 100 characters; the latest 50 survive refresh and rematches.
 
-There is no matchmaking, spectator mode, or computer opponent. An invitation grants permission to apply, not ownership of a player's seat. Returning players use the same browser session; another browser cannot take over their identity. Leaving closes the room for both players, and rooms expire after 24 hours.
+There is no matchmaking, spectator mode, or computer opponent. An invitation grants permission to apply, not ownership of a player's seat. Returning players use the same browser session; another browser cannot take over their identity. Leaving returns to the home page and keeps the option to resume the room; closing requires confirmation and closes the room for both players. Rooms expire after 24 hours.
 
 The responsive interface adapts the board, player cards, and controls to phones, tablets, desktops, and low-height windows. Chat opens in an overlay, keeping the board available during conversation.
 
@@ -124,7 +124,7 @@ Invitations use URL fragments and need no custom server routing. Save the previo
 
 ## Screenshots
 
-Game views at representative browser viewport sizes. Phone and replay images show the full page.
+Full-page views from a local two-player game at representative browser viewport sizes. Tablet and phone views use browser emulation. The room controls provide separate actions for leaving and closing the room.
 
 Desktop (1280×844), portrait tablet (768×1024), and phone (390×844).
 

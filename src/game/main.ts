@@ -276,6 +276,7 @@ function render() {
   button('cancelApplication').disabled = busy;
   button('homeReturn').hidden = !s || s.phase !== 'closed';
   button('leave').hidden = !s || s.phase === 'closed';
+  button('closeRoom').hidden = button('leave').hidden;
   if (!s) { updateRoomLayout(''); return; }
   el('round').textContent = String(s.round).padStart(2, '0');
   el('roomCode').textContent = s.code;
@@ -324,7 +325,8 @@ function render() {
   }
   el('resultPanel').hidden = replayStep !== null || !resultKey || dismissedResult === resultKey;
   if (s.application) el('applicantName').textContent = `${s.application.name}想加入你的房间👀请确认是对方本人哦！`;
-  for (const id of ['approve', 'reject', 'leave']) button(id).disabled = busy || !connected || !!uncertain;
+  button('leave').disabled = busy;
+  for (const id of ['approve', 'reject', 'closeRoom']) button(id).disabled = busy || !connected || !!uncertain;
   button('confirm').disabled = !selection || !canMove();
   button('cancel').disabled = !selection || busy;
   button('resign').disabled = !canResign();
@@ -687,7 +689,8 @@ async function copy(id: string, value: string, label: string, success: string) {
 button('invite').onclick = () => { void copy('invite', `${location.origin}${location.pathname}#${snapshot?.code || room}`, '复制邀请链接', '邀请链接复制成功！'); };
 button('copyCode').onclick = () => { if (snapshot) void copy('copyCode', snapshot.code, '复制房间码', '房间码复制成功！'); };
 const leaveDialog = el('leaveDialog') as HTMLDialogElement;
-button('leave').onclick = () => leaveDialog.showModal();
+button('leave').onclick = () => { home(); notice('已离开房间，可以继续上次房间。'); };
+button('closeRoom').onclick = () => leaveDialog.showModal();
 button('stay').onclick = () => leaveDialog.close();
 button('confirmLeave').onclick = () => {
   leaveDialog.close();
