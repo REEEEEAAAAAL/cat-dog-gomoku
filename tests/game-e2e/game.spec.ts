@@ -800,13 +800,17 @@ test('resignation confirms once, restores both results and swaps colors on remat
     const loserName = result.players[result.seat-1].name, winnerName = result.players[2-result.seat].name;
     for (const page of [loser,winner]) {
       await expect(page.locator('#resultTitle')).toHaveText(`${winnerName}赢啦！！`);
-      await expect(page.locator('#resultReason')).toHaveText(`${loserName}已认输✋️😭✋️`);
+      await expect(page.locator("#resultReason")).toHaveText(
+          `${loserName}已认输🤚😭✋️`,
+      );
       await expect(page.locator('#resign')).toBeDisabled();
       await expect(page.locator('#confirm')).toBeDisabled();
       await expect(page.locator('.stone.preview')).toHaveCount(0);
       await expect(page.locator('#gameStatus')).toHaveText(page === loser ? '已认输，下局再来一决高下！💪' : '对方决定投降，这局是你的啦～🎉');
       await page.reload();
-      await expect(page.locator('#resultReason')).toHaveText(`${loserName}已认输✋️😭✋️`);
+      await expect(page.locator("#resultReason")).toHaveText(
+          `${loserName}已认输🤚😭✋️`,
+      );
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.screenshot({path:`test-results/screenshots/surrender-result-${page === a ? 'desktop' : 'mobile'}.png`,fullPage:true});
     }

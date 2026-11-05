@@ -321,7 +321,7 @@ function render() {
     resultKey = nextResultKey;
     el('resultAvatar').innerHTML = s.winner ? avatar(s.players[s.winner - 1].animal) : '';
     el('resultTitle').textContent = `${winner}赢啦！！`;
-    el('resultReason').textContent = s.reason === 'resign' ? `${s.players[2 - s.winner!].name}已认输✋️😭✋️` : s.reason === 'timeout' ? `${turnName}行棋超时` : '五子连线，这一局好精彩哇！';
+    el('resultReason').textContent = s.reason === 'resign' ? `${s.players[2 - s.winner!].name}已认输🤚😭✋️` : s.reason === 'timeout' ? `${turnName}行棋超时` : '五子连线，这一局好精彩哇！';
   }
   el('resultPanel').hidden = replayStep !== null || !resultKey || dismissedResult === resultKey;
   if (s.application) el('applicantName').textContent = `${s.application.name}想加入你的房间👀请确认是对方本人哦！`;

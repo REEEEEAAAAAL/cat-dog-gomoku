@@ -167,6 +167,7 @@
 }
 
 .masthead { padding-block: 3px; }
+.footer-links { transform: translateX(10px); }
 .footer-divider { width: 1px; height: 14px; flex-shrink: 0; background: #626762; }
 
 #room[data-layout="phone"] .board-area { display: grid; grid-template-columns: minmax(0,1fr); }
