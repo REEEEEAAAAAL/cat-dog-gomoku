@@ -6,6 +6,7 @@ type Source = AudioBufferSourceNode | OscillatorNode;
 const storageKey = 'gomoku.sound';
 const melodies = { win: [523.25, 659.25, 783.99, 1046.5], lose: [659.25, 587.33, 523.25, 392] };
 
+/** 管理 Web Audio 解锁、录音缓存与声部；页面隐藏时调用方需调用 stop，静音会立即停止。 */
 export class GameAudio {
   enabled = true;
   private context: AudioContext | null = null;
@@ -13,6 +14,7 @@ export class GameAudio {
   private sources = new Set<Source>();
   private buffers = new Map<Sample, Promise<AudioBuffer>>();
   private decoded = new Map<Sample, AudioBuffer>();
+  // 停止时递增代次，使尚在下载的旧请求失效；tail 用于顺序安排落子与结算提示。
   private generation = 0;
   private tail = 0;
   private warned = false;
@@ -36,6 +38,7 @@ export class GameAudio {
     catch (error) { this.unavailable(error); }
   }
 
+  /** 必须从用户手势同步调用，满足包括 Safari 在内的自动播放限制。 */
   unlock() {
     if (!this.enabled || document.hidden) return;
     try {
@@ -51,7 +54,7 @@ export class GameAudio {
         this.decoded.clear();
       }
       const context = this.context;
-      // Resume is called directly in the user gesture, including Safari touch release.
+      // 在用户手势调用栈内恢复上下文，兼容 Safari 的触摸释放事件。
       if (context.state !== 'running') void context.resume().catch(error => this.unavailable(error));
       const silent = context.createBufferSource();
       silent.buffer = context.createBuffer(1, 1, context.sampleRate);
@@ -83,6 +86,7 @@ export class GameAudio {
     }
   }
 
+  /** key 需区分房间、本局及回合截止时间；传 null 会立即取消当前倒计时提示。 */
   updateCountdown(key: string | null, remainingMs = 0) {
     if (!key || !Number.isFinite(remainingMs) || remainingMs <= 0 || remainingMs > 10000
       || !this.enabled || document.hidden || this.context?.state !== 'running') {
@@ -91,7 +95,7 @@ export class GameAudio {
     if (key !== this.countdownKey) { this.stopCountdown(); this.countdownKey = key; }
     const now = performance.now();
     if (now < this.nextCountdownAt) return;
-    // Schedule only the current pulse; delayed ticks never replay missed beats.
+    // 每次只安排当前一拍；间隔随剩余时间缩短，延迟回调不补播错过的节拍。
     this.nextCountdownAt = now + 120 + 880 * (remainingMs / 10000) ** 3;
     try {
       this.countdownSource = this.tone(880, this.context.currentTime, .09, .48 * 10 ** (2.5 / 20), 'sine', 784);
@@ -107,6 +111,7 @@ export class GameAudio {
     };
   }
 
+  // 缓存下载中的 Promise 合并并发请求；失败后移除，允许后续手势或事件重新下载。
   private async load(animal: Sample): Promise<AudioBuffer> {
     let buffer = this.buffers.get(animal);
     if (!buffer) {
@@ -124,6 +129,7 @@ export class GameAudio {
   async animal(animal: Animal) {
     if (!this.enabled || !this.context || document.hidden) return;
     this.stop();
+    // 较晚完成的下载不能覆盖后来的声音选择，也不能在过期后突然播放。
     const generation = this.generation, requested = performance.now();
     try {
       const buffer = await this.load(animal);
@@ -137,7 +143,7 @@ export class GameAudio {
 
   play(sounds: readonly GameSound[]) {
     if (!sounds.length || !this.enabled || document.hidden || this.context?.state !== 'running') return;
-    // A missed opening cue is consumed without waiting for a download or later gesture.
+    // 开局提示只即时播放已解码录音，错过后不等待下载或下一次手势补播。
     sounds = sounds.filter(sound => sound !== 'start' || this.decoded.has('start'));
     if (!sounds.length) return;
     const missing = sounds.filter((sound): sound is 'move' | 'undo' => (sound === 'move' || sound === 'undo') && !this.decoded.has(sound));
@@ -177,6 +183,7 @@ export class GameAudio {
     } catch (error) { this.stop(); this.unavailable(error); }
   }
 
+  // 音量从零渐入并在停止前渐出；指数衰减的目标必须大于零，避免 Web Audio 抛错。
   private envelope(at: number, duration: number, volume: number) {
     const gain = this.context!.createGain();
     gain.gain.setValueAtTime(0, at);

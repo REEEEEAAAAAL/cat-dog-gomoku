@@ -1,7 +1,9 @@
+-- 聊天使用独立版本、行锁和回执，不改变游戏计时、棋局版本或落子去重记录。
 CREATE TABLE public.gomoku_chat_state (
   room uuid PRIMARY KEY REFERENCES public.gomoku_rooms(id) ON DELETE CASCADE,
   revision integer NOT NULL DEFAULT 0
 );
+-- 去重回执与正文分开保存：正文裁剪后，原操作 ID 仍可核对且无需保留完整文本。
 CREATE TABLE public.gomoku_chat_receipts (
   room uuid NOT NULL REFERENCES public.gomoku_rooms(id) ON DELETE CASCADE,
   operation uuid NOT NULL,
@@ -26,6 +28,7 @@ ALTER TABLE public.gomoku_chat_receipts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.gomoku_chat_messages ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.gomoku_chat_state, public.gomoku_chat_receipts, public.gomoku_chat_messages FROM PUBLIC, anon, authenticated;
 
+-- 内部快照不自行鉴权，只能由已校验参与者的入口调用；浏览器没有直接执行权限。
 CREATE FUNCTION public.gomoku_chat_snapshot(p_room uuid) RETURNS jsonb
 LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$
   SELECT jsonb_build_object('room',p_room,'revision',coalesce((SELECT revision FROM public.gomoku_chat_state WHERE room=p_room),0),
@@ -51,6 +54,7 @@ BEGIN
     RAISE EXCEPTION 'unauthorized';
   END IF;
   IF p_operation IS NULL AND p_text IS NOT NULL THEN RAISE EXCEPTION 'invalid_chat'; END IF;
+  -- 读聊天不续游戏心跳；发送时共享锁住房间，与关闭或清理操作协调生命周期。
   IF p_operation IS NULL THEN
     SELECT * INTO s FROM public.gomoku_rooms WHERE id=p_room;
   ELSE
@@ -69,9 +73,11 @@ BEGIN
     OR p_text ~ '[\x01-\x08\x0B\x0C\x0E-\x1F\x7F]' THEN
     RAISE EXCEPTION 'invalid_chat';
   END IF;
+  -- 统一先锁房间再锁聊天状态；聊天行锁串行分配 seq，并将去重与频控置于同一事务。
   INSERT INTO public.gomoku_chat_state(room) VALUES(s.id) ON CONFLICT DO NOTHING;
   SELECT revision INTO revision_value FROM public.gomoku_chat_state WHERE room=s.id FOR UPDATE;
   SELECT * INTO receipt FROM public.gomoku_chat_receipts WHERE room=s.id AND operation=p_operation;
+  -- 重试核对先于关闭状态和频控：已保存消息在关闭后仍可确认，正文或发送者不符则拒绝。
   IF FOUND THEN
     IF receipt.seat<>sender OR receipt.fingerprint<>sha256(convert_to(p_text,'UTF8')) THEN RAISE EXCEPTION 'chat_id_conflict'; END IF;
     RETURN public.gomoku_chat_snapshot(s.id)||jsonb_build_object('ack',p_operation,'duplicate',true);
@@ -86,6 +92,7 @@ BEGIN
   UPDATE public.gomoku_chat_state SET revision=revision_value WHERE room=s.id;
   INSERT INTO public.gomoku_chat_receipts VALUES(s.id,p_operation,sender,sha256(convert_to(p_text,'UTF8')),revision_value,now_at);
   INSERT INTO public.gomoku_chat_messages VALUES(s.id,revision_value,p_operation,sender,p_text,now_at);
+  -- 只裁剪正文窗口，revision 持续递增，频控与旧消息重试使用独立回执。
   DELETE FROM public.gomoku_chat_messages WHERE room=s.id AND seq<=revision_value-50;
   RETURN public.gomoku_chat_snapshot(s.id)||jsonb_build_object('ack',p_operation,'duplicate',false);
 END;
@@ -93,6 +100,7 @@ $$;
 REVOKE ALL ON FUNCTION public.gomoku_chat(uuid,uuid,uuid,text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.gomoku_chat(uuid,uuid,uuid,text) TO anon, authenticated;
 
+-- 包装已有游戏 RPC，只有已入座快照附带聊天；保持待审批回包及游戏版本语义不变。
 ALTER FUNCTION public.gomoku_command(text,text,uuid,uuid,integer,uuid,jsonb,integer) RENAME TO gomoku_game_command;
 REVOKE ALL ON FUNCTION public.gomoku_game_command(text,text,uuid,uuid,integer,uuid,jsonb,integer) FROM PUBLIC, anon, authenticated;
 CREATE FUNCTION public.gomoku_command(

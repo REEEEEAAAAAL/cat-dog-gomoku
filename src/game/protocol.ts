@@ -17,6 +17,7 @@ export interface ReactionEvent { id: string; seat: Seat; emoji: Reaction; at: nu
 export interface UndoRequest { id: string; seat: Seat; target: string; removeCount: 1 | 2; restoreMs: number; expiresAt: number }
 export interface Player { name: string; animal: 'dog' | 'cat'; ready: boolean; online: boolean; synced: boolean; undoLeft: number }
 export interface Pending { pending: true; room: string; code: string; serverNow: number; applicationId: string | null; withdrawn?: boolean }
+// seat 表示固定席位，blackSeat 表示本局执黑席位；再来一局只交换棋色。
 export interface Snapshot {
   chat?: ChatSnapshot;
   pending: false;
@@ -49,6 +50,7 @@ export interface Snapshot {
   undoBlocked?: boolean;
 }
 export type Reply = Pending | Snapshot;
+/** 写操作以 operation 去重，以 version 和 game 约束意图所依据的局面。client 标识当前控制页面。 */
 export interface Command {
   p_room: string;
   p_action: Action;
@@ -70,6 +72,7 @@ const player = (value: unknown): value is Player => object(value) && typeof valu
   && (value.animal === 'cat' || value.animal === 'dog') && typeof value.ready === 'boolean'
   && typeof value.online === 'boolean' && typeof value.synced === 'boolean' && number(value.undoLeft) && value.undoLeft >= 0 && value.undoLeft <= 2;
 
+/** 校验 RPC 外部数据后再交给渲染和状态机，待审批回包与入座快照分别检查。 */
 export function isReply(value: unknown): value is Reply {
   if (!object(value) || typeof value.room !== 'string' || typeof value.code !== 'string' || !number(value.serverNow)) return false;
   if (value.pending === true) return value.withdrawn === true ? value.applicationId === null : typeof value.applicationId === 'string';
@@ -123,6 +126,7 @@ export class RpcError extends Error {
   constructor(readonly code: string) { super(errorMessage(code)); this.name = 'RpcError'; }
 }
 
+// 网关可能将错误码包在 SQL 错误文本内；按完整词匹配，避免把任意子串当作终止错误。
 export function rpcError(body: unknown): RpcError {
   const message = object(body) && typeof body.message === 'string' ? body.message : '';
   const code = Object.keys(messages).find(code => message.split(/[^a-z_]+/).includes(code));

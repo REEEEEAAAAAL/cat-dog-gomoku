@@ -1,3 +1,4 @@
+/* 由 CSS 统一决定布局模式，layout.ts 读取这些变量并迁移同一组 DOM 节点。 */
 .room-layout { --room-layout: phone; --room-compact: 0; --heading-height: 36px; --heading-gap: 8px; --board-shadow: 5px; }
 #room .move-controls > .action-cluster { display: grid; grid-template-columns: max-content max-content; gap: 6px 4px; flex-shrink: 0; }
 #room .action-cluster #confirm { grid-row: 1; grid-column: 1; }
@@ -50,6 +51,7 @@
 #room:not([data-layout="phone"]) .replay-area { position: static; padding: 13px 0 0; width: 100%; max-width: none; }
 #room:not([data-layout="phone"]) .replay-row { justify-content: flex-end; }
 
+/* 棋盘同时受视口宽高约束，右栏为操作保留固定空间；底部状态与关闭按钮独占一行。 */
 #room[data-layout="wide"] {
   --room-action-width: 80px;
   --aside-gap: 8px;
@@ -99,6 +101,7 @@
 #room .reaction-picker .reaction-arrow:disabled { color: var(--muted); }
 #room[data-layout="wide"] .desktop-actions .reactions { position: relative; left: 4px; scroll-snap-type: none; }
 
+/* 平板以棋盘宽度而非窗口宽度分配操作空间，表情条按完整按钮步长裁切。 */
 #room[data-layout="stacked"] { --board-size: min(620px, calc(100vw - 48px), max(320px, calc(100dvh - 364px))); grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .shell:has(#room:not([hidden])[data-layout="stacked"]) .masthead { min-height: 62px; }
 #room[data-layout="stacked"] { padding-top: 12px; }
@@ -140,6 +143,7 @@
 #negotiationDialog { padding: 0; }
 #negotiationDialog .undo-panel { margin: 0; border: 0; }
 
+/* 紧凑模式只压缩非手机布局，隐藏次要说明以优先保留棋盘和操作。 */
 .shell:has(#room:not([hidden]):not([data-layout="phone"])[data-compact="true"]) .masthead { min-height: 54px; }
 #room:not([data-layout="phone"])[data-compact="true"] { padding-top: 12px; }
 #room[data-layout="wide"][data-compact="true"] { --board-size: min(620px, calc(100vw - 352px), max(300px, calc(100dvh - 120px))); }
@@ -170,6 +174,7 @@
 .footer-links { transform: translateX(10px); }
 .footer-divider { width: 1px; height: 14px; flex-shrink: 0; background: #626762; }
 
+/* 手机回放和普通操作共享网格行；展开回放后操作下移，避免浮层挡住棋盘或按钮。 */
 #room[data-layout="phone"] .board-area { display: grid; grid-template-columns: minmax(0,1fr); }
 #room[data-layout="phone"] .board-wrap { grid-row: 1; grid-column: 1; }
 #room[data-layout="phone"] .move-controls { grid-column: 1; align-items: flex-start; }

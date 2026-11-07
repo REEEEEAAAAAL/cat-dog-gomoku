@@ -4,10 +4,12 @@ import { isChatSnapshot } from '../../src/game/chat-protocol';
 import type { ChatCommand, ChatSnapshot } from '../../src/game/chat-protocol';
 import { fetchJsonWithTimeout } from '../../diagnostics/cloudbase/http';
 
+// 仅用于本地 SQL 测试：每个独立浏览器存储生成稳定身份，刷新后仍可恢复席位。
 export async function login(): Promise<void> {
   if (!localStorage.getItem('gomoku.test.uid')) localStorage.setItem('gomoku.test.uid', crypto.randomUUID());
 }
 
+// X-Test-Uid 由本地 Vite 中间件解释；沿用正式回包校验与错误映射以覆盖客户端契约。
 async function request(command: Command | ChatCommand, rpc = 'gomoku_command'): Promise<unknown> {
   const { response, body } = await fetchJsonWithTimeout(`/rpc/${rpc}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Test-Uid': localStorage.getItem('gomoku.test.uid') || '' },

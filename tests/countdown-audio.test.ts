@@ -7,6 +7,7 @@ function parameter() {
 function node() {
   return { connect: vi.fn(), disconnect: vi.fn(), start: vi.fn(), stop: vi.fn(), onended: null as (() => void) | null };
 }
+// 记录音频节点调用，不依赖真实声卡；只控制单调时间以验证节拍安排和即时停止。
 function setup() {
   const oscillators: ReturnType<typeof oscillator>[] = [];
   function oscillator() { return { ...node(), frequency: parameter(), type: 'sine' }; }
@@ -44,6 +45,7 @@ describe('countdown warning audio', () => {
   it('progressively accelerates without overlapping pulses', () => {
     const { audio, oscillators } = setup();
     const times: number[] = [];
+    // 与页面 50ms 刷新节奏一致，断言可观察的加速间隔及声部数量。
     for (let elapsed = 0; elapsed <= 10000; elapsed += 50) {
       const before = oscillators.length;
       audio.updateCountdown('turn', 10000 - elapsed);

@@ -14,6 +14,7 @@ const sizes = [
   { name: 'small-window', width: 853, height: 563, mode: 'wide' },
 ];
 
+// 拦截本地 RPC 返回可变快照并阻断云端，只验证布局与阅读交互，不执行服务端规则。
 async function fixture(page: Page) {
   const state: Snapshot = {
     pending: false, room: '11111111-1111-4111-8111-111111111111', code: 'ABCDEF1234', seat: 1,
@@ -35,6 +36,7 @@ async function fixture(page: Page) {
   await page.goto('/');
   await page.locator('#create').click();
   await expect(page.locator('#gameStatus')).toHaveText('你的回合！');
+  // 字体加载完成后再量控件，避免后备字体切换导致宽度断言不稳定。
   await page.evaluate(() => document.fonts.ready);
   const refresh = async () => {
     const response = page.waitForResponse(r => r.url().endsWith('/rpc/gomoku_command'));
@@ -203,6 +205,7 @@ test('chat reads stop for collapsed, idle and hidden panels and resume on intera
   await page.locator('#chatClose').click();
   const closed=reads;await page.waitForTimeout(3100);expect(reads).toBe(closed);
   await page.locator('#chatToggle').click();await expect.poll(()=>reads).toBeGreaterThan(closed);
+  // 仅推进客户端活跃时间判断，RPC 保持受控快照，无需真实等待一分钟。
   await page.evaluate(()=>{const now=Date.now.bind(Date);Date.now=()=>now()+61000;});
   const idle=reads;await page.waitForTimeout(3100);expect(reads).toBe(idle);
   await page.locator('#chatInput').click();await expect.poll(()=>reads).toBeGreaterThan(idle);
@@ -244,6 +247,7 @@ test('portrait tablet keeps two action rows, scrollable reactions and an aligned
   await expect(page.locator('#connectionBar')).toBeVisible();await expect(page.locator('#tabletFooter')).toBeHidden();
 });
 
+// 使用文档坐标排除滚动偏移，比较状态切换前后右栏核心控件是否移动。
 async function rightGeometry(page: Page) {
   return page.evaluate(() => ['opponentPlayer', 'selfPlayer', 'undo', 'resign', 'confirm', 'cancel', 'interactionControls', 'leave'].map(id => {
     const rect = document.getElementById(id)!.getBoundingClientRect();
@@ -251,6 +255,7 @@ async function rightGeometry(page: Page) {
   }));
 }
 
+// 显示和隐藏分别核对迟滞两端：隐藏门槛是棋盘高度四分之一，显示需再多 12px。
 async function checkArt(page: Page) {
   const { visible, available, threshold } = await page.evaluate(() => {
     const activity = document.getElementById('asideActivity')!.getBoundingClientRect();

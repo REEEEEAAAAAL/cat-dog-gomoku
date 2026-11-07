@@ -9,6 +9,7 @@ const env = import.meta.env.VITE_CLOUDBASE_ENV_ID as string | undefined;
 const accessKey = import.meta.env.VITE_CLOUDBASE_PUBLISHABLE_KEY as string | undefined;
 const app = env && accessKey ? cloudbase.init({ env, accessKey, region: 'ap-shanghai' }) : null;
 
+/** 复用浏览器已有的访客身份，避免刷新后失去房间席位。 */
 export async function login(): Promise<void> {
   if (!app) throw new Error('尚未配置云端环境');
   const session = await app.auth().getSession();
@@ -19,6 +20,7 @@ export async function login(): Promise<void> {
   }
 }
 
+// 每次请求读取当前会话令牌；传输失败直接交给调用方核对，避免自动重放写命令。
 async function request(command: Command | ChatCommand, rpc = 'gomoku_command'): Promise<unknown> {
   if (!app) throw new Error('尚未配置云端环境');
   const session = await app.auth().getSession();
@@ -34,18 +36,21 @@ async function request(command: Command | ChatCommand, rpc = 'gomoku_command'): 
   return body;
 }
 
+/** 发送或读取聊天，并在网络信任边界校验回包结构。 */
 export async function sendChat(command: ChatCommand): Promise<ChatSnapshot> {
   const body = await request(command, 'gomoku_chat');
   if (!isChatSnapshot(body)) throw new Error('聊天数据不完整，请重试');
   return body;
 }
 
+/** 提交游戏命令；业务拒绝保留在回包中，HTTP 或协议错误抛出异常。 */
 export async function send(command: Command): Promise<Reply> {
   const body = await request(command);
   if (!isReply(body)) throw new Error('返回数据不完整，请刷新重试');
   return body;
 }
 
+/** 读取邀请的剩余角色；预览回包与入座后的棋盘快照使用不同结构。 */
 export async function inspectInvitation(command: Command): Promise<InvitationInfo> {
   const body = await request(command);
   if (!isInvitationInfo(body)) throw new Error('无法确认房间角色，请重试');

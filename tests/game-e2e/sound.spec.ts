@@ -7,6 +7,7 @@ interface Voice { kind: string; frequency: number; at: number; duration: number;
 interface Probe { voices: Voice[]; contexts: AudioContext[] }
 declare global { interface Window { soundProbe: Probe } }
 
+// 包装真实 Web Audio 节点并继续调用原实现，记录调度行为而非只检查调用音效方法。
 function instrumentAudio() {
   window.soundProbe = { voices: [], contexts: [] };
   const Audio = window.AudioContext;
@@ -29,6 +30,7 @@ function instrumentAudio() {
     const source = buffer.call(this), start = source.start.bind(source), stop = source.stop.bind(source);
     let voice: Voice;
     source.start = (at = 0) => {
+      // 解锁上下文使用的单采样静音不计入实际提示音。
       if (source.buffer && source.buffer.duration > .001) {
         voice = { kind: 'buffer', frequency: 0, at, duration: source.buffer.duration, stopped: false };
         window.soundProbe.voices.push(voice);
@@ -45,6 +47,7 @@ async function setup(context: BrowserContext) {
   await context.addInitScript(instrumentAudio);
 }
 async function voices(page: Page) { return page.evaluate(() => window.soundProbe.voices); }
+// 录音用时长区分，合成结算音用波形区分；替换声音素材时需同步核对这些观测范围。
 async function count(page: Page, kind: 'start' | 'move' | 'undo' | 'result' | 'animal') {
   return (await voices(page)).filter(v => kind === 'move' ? v.kind === 'buffer' && v.duration >= .2 && v.duration <= .35
     : kind === 'undo' ? v.kind === 'buffer' && v.duration >= .6 && v.duration <= .9
@@ -57,6 +60,7 @@ async function poll(page: Page) {
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await response;
 }
+// 桌面与触屏模拟共享真实本地 SQL 规则，各自独立身份；外部 HTTPS 请求均被拦截。
 async function pair(browser: Browser, start = true) {
   const contexts = await Promise.all([browser.newContext(), browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true })]);
   for (const context of contexts) await setup(context);

@@ -6,6 +6,7 @@ afterEach(()=>{
   vi.restoreAllMocks();
 });
 
+// 暂时移除较新浏览器 API，验证请求成功与失败两条路径都释放兼容实现的定时器。
 describe('CloudBase HTTP timeout compatibility',()=>{
   it('uses AbortController when AbortSignal.timeout is unavailable and clears the timer',async()=>{
     const descriptor=Object.getOwnPropertyDescriptor(AbortSignal,'timeout');

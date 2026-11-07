@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
+// 通过平台访问提示后恢复原邀请路径，确保两端加入同一诊断会话。
 async function enter(page:Page,path='/'){
   await page.goto(path);
   if(await page.title()==='风险提醒'){
@@ -23,6 +24,7 @@ async function newRoom(a:Page,b:Page){
   return room;
 }
 
+// 仅显式指定公网诊断地址时运行，真实等待服务端一分钟回合与五分钟离线结算。
 test('public server timer, turn reset, disconnect pause and five minute abort',async({browser})=>{
   test.skip(!process.env.CLOUDBASE_DIAGNOSTIC_URL);
   test.setTimeout(600_000);

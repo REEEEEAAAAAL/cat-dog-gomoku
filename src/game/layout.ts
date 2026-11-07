@@ -1,8 +1,10 @@
 type RoomLayout = 'phone' | 'stacked' | 'wide';
 
+/** 房间 DOM 挂载后调用一次，安装页面生命周期内的布局监听，返回状态更新函数。 */
 export function setupRoomLayout() {
   const element = (id: string) => document.getElementById(id)!;
   const room = element('room');
+  // 移动同一批节点以保留事件和控件状态；注释锚点记录原位，切回手机布局时按原序复位。
   const origins = new Map<HTMLElement, Comment>();
   const movable = ['turnBar', 'opponentPlayer', 'selfPlayer', 'interactionControls',
     'moveControls', 'undoPanel', 'rematchPanel', 'applicationPanel',
@@ -28,6 +30,7 @@ export function setupRoomLayout() {
   const rules = element('rules') as HTMLDetailsElement;
   const update = () => {
     const style = getComputedStyle(room);
+    // 断点以 CSS 为唯一来源，JS 只按模式迁移节点，避免两套尺寸条件漂移。
     const mode = style.getPropertyValue('--room-layout').trim() as RoomLayout;
     const compact = style.getPropertyValue('--room-compact').trim() === '1';
     room.dataset.phase = phase;
@@ -73,6 +76,7 @@ export function setupRoomLayout() {
       }, activity.top);
       const available = activity.bottom - contentBottom;
       const threshold = element('board').getBoundingClientRect().height / 4;
+      // 显示门槛比隐藏门槛高 12px，防止插画自身影响可用空间后反复切换。
       artVisible = available >= threshold + (artVisible ? 0 : 12);
       room.dataset.art = String(artVisible);
     } else {
@@ -100,6 +104,7 @@ export function setupRoomLayout() {
     const dialog = element('negotiationDialog') as HTMLDialogElement;
     const negotiating = mode !== 'phone' && !room.hidden && !element('undoPanel').hidden;
     const chatPanel = element('chatPanel');
+    // 模态 dialog 使外部节点不可交互；协商期间把聊天移入顶层对话框以保留聊天能力。
     const chatParent = negotiating ? dialog : document.body;
     if (chatPanel.parentElement !== chatParent) chatParent.appendChild(chatPanel);
     if (negotiating && !dialog.open) dialog.showModal();
@@ -109,6 +114,7 @@ export function setupRoomLayout() {
   window.addEventListener('resize', update);
   window.visualViewport?.addEventListener('resize', update);
   let scheduled = 0;
+  // 将尺寸观察合并到下一帧，避免在 ResizeObserver 回调内立即改布局形成同步循环。
   const observer = new ResizeObserver(() => {
     cancelAnimationFrame(scheduled);
     scheduled = requestAnimationFrame(update);

@@ -5,6 +5,7 @@ import type { Move } from '../src/game/rules';
 
 const player = { name: '朋友', animal: 'cat' as const, ready: true, online: true, synced: true, undoLeft: 2 };
 const move = (id: string, x = 7): Move => ({ id, x, y: 7, seat: 1, color: 1 });
+// 基线快照默认在线且已同步；每例仅覆盖与音效转换有关的状态差异。
 function state(extra: Partial<Snapshot> = {}): Snapshot {
   return { pending: false, room: 'room', code: '1234567890', seat: 1, version: 1, gameId: 'round-1', round: 1,
     phase: 'running', blackSeat: 1, turnSeat: 1, moves: [], winLine: [], winner: null, reason: null,
@@ -99,6 +100,7 @@ describe('confirmed snapshot sound events', () => {
     expect(events.observe({ ...base, version: 4, emojis: [{ id: 'emoji', seat: 1, emoji: 'heart', at: 1 }] }, true)).toEqual([]);
     expect(events.observe({ ...base, version: 5, serverNow: 30000 }, true)).toEqual([]);
   });
+  // 悔棋和补落可能发生在两次轮询之间，棋子总数不变也须按剩余次数识别悔棋。
   it('sounds once for confirmed undo even when replacement moves keep the same board size', () => {
     const events = new SoundEvents(), base = state({ moves: [move('a')] }); events.observe(base, true);
     const undo = state({ version: 2, moves: [move('b')], players: [{ ...player, undoLeft: 1 }, { ...player }] });

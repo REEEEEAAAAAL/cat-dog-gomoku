@@ -28,6 +28,7 @@
     <path d="M185 97C190 100 198 101 204 98Q205 97.5 205 96.5" stroke-width="1.6"/>
     <path d="M215 129L212 170Q208 169 205 170M235 131C237 145 237 160 233 170C227 169 222 171 222 174"/>
   </g>
+  <!-- 棋盘和棋子共享整体位移；棋子位置对应透视后的 7×7 交点。 -->
   <g transform="translate(-5 0)">
     <g stroke="#b8aa90" stroke-width="1.4" stroke-linejoin="round">
       <path d="M126 157L168 140L216 158V162L172 180L126 162Z" fill="#e9ddc6"/>

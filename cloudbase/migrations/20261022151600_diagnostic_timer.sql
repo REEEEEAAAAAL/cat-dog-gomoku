@@ -1,3 +1,5 @@
+-- 在原诊断表上增加服务端计时；状态转换由请求惰性触发，不依赖后台定时任务。
+-- 加列前检查存量结构，异常直接停止迁移，保留原有计数和回执。
 DO $$
 DECLARE
   existing_rows bigint;
@@ -82,6 +84,7 @@ BEGIN
   IF caller <> session.owner AND caller <> session.guest THEN RAISE EXCEPTION 'forbidden'; END IF;
   caller_seat := CASE WHEN caller = session.owner THEN 1 ELSE 2 END;
 
+  -- 先结算旧心跳产生的暂停或超时，再记录本次请求在线，避免重连消除既有离线时间。
   IF session.phase = 'paused' AND session.offline_deadline <= now_at THEN
     session.phase := 'aborted';
     session.offline_since := NULL;
@@ -99,6 +102,7 @@ BEGIN
         ELSE least(stale_at, coalesce(session.guest_seen_at + interval '25 seconds', now_at)) END;
     END IF;
 
+    -- 对比最早离线时刻与行棋截止；先离线则冻结该时刻剩余时间，先超时则结算负方。
     IF stale_at IS NOT NULL THEN
       IF session.turn_deadline IS NULL OR session.turn_deadline <= stale_at THEN
         session.phase := 'timeout';
@@ -125,6 +129,7 @@ BEGIN
     END IF;
   END IF;
 
+  -- 心跳至少间隔十五秒落库，读取使用二十五秒在线阈值，减少十秒轮询产生的写入。
   IF caller_seat = 1 THEN
     IF p_action = 'join' OR session.owner_seen_at IS NULL OR session.owner_seen_at <= now_at - interval '15 seconds' THEN
       session.owner_seen_at := now_at;
@@ -168,6 +173,7 @@ BEGIN
     IF p_operation IS NULL OR p_version IS NULL OR p_version < 0 THEN
       RAISE EXCEPTION 'invalid_operation';
     END IF;
+    -- 重试先匹配原回执，不让后续版本变更使已持久化的操作再次执行。
     SELECT value INTO receipt
     FROM jsonb_array_elements(session.receipts)
     WHERE value->>'id' = p_operation::text;
@@ -211,6 +217,7 @@ BEGIN
     write_row := true;
   END IF;
 
+  -- 心跳写入与可观察状态版本分开；成功 pulse 已自行加版，其他状态转换统一在此加版。
   IF changed THEN session.version := session.version + 1; END IF;
   IF write_row THEN
     UPDATE public.gomoku_diag_probe SET

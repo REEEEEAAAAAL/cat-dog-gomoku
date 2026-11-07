@@ -1,3 +1,4 @@
+-- 认输针对当前局生效，可在对方离线或悔棋暂停时结算；已发生的终局优先保留。
 CREATE OR REPLACE FUNCTION public.gomoku_command(
   p_room text,
   p_action text,
@@ -66,6 +67,7 @@ BEGIN
   IF p_action = 'create' THEN
     IF p_room !~* '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$' OR
       coalesce(p_data->>'animal','') NOT IN ('dog','cat') THEN RAISE EXCEPTION 'invalid_request'; END IF;
+    -- 按创建者串行核对限额，避免并发建房绕过每小时限制。
     PERFORM pg_advisory_xact_lock(hashtext(caller));
     IF NOT EXISTS (SELECT 1 FROM public.gomoku_rooms WHERE id = p_room::uuid) THEN
       IF (SELECT count(*) FROM public.gomoku_rooms WHERE owner_uid=caller AND created_at > clock_timestamp()-interval '1 hour') >= 5 THEN
@@ -77,6 +79,7 @@ BEGIN
     END IF;
   END IF;
 
+  -- 普通命令锁住房间串行处理，纯预览走无行锁读取，避免引入游戏状态副作用。
   IF p_room ~* '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$' THEN
     IF p_action='preview' THEN
       SELECT * INTO s FROM public.gomoku_rooms WHERE id=p_room::uuid;
@@ -91,6 +94,7 @@ BEGIN
     END IF;
   END IF;
   IF NOT FOUND THEN RAISE EXCEPTION 'not_found'; END IF;
+  -- 读取房间后再取时间；需要行锁的命令将锁等待计入超时及在线判定。
   now_at := clock_timestamp();
   IF s.expires_at <= now_at THEN RAISE EXCEPTION 'expired'; END IF;
   IF p_action='create' AND s.owner_uid<>caller THEN RAISE EXCEPTION 'forbidden'; END IF;
@@ -103,6 +107,7 @@ BEGIN
       'animal',CASE WHEN seat=1 THEN s.owner_animal WHEN s.owner_animal='dog' THEN 'cat' ELSE 'dog' END);
   END IF;
   IF seat=0 THEN
+    -- 撤回只匹配调用者及该次申请；重复撤回无副作用，已获批席位不走此分支。
     IF p_action='withdraw' THEN
       IF s.applicant_uid=caller THEN
         IF s.application_id::text IS DISTINCT FROM p_data->>'application' THEN RAISE EXCEPTION 'application_changed'; END IF;
@@ -133,6 +138,7 @@ BEGIN
   IF is_mutation AND (p_operation IS NULL OR p_version IS NULL OR p_version<0 OR p_game IS NULL) THEN
     RAISE EXCEPTION 'invalid_operation';
   END IF;
+  -- 去重指纹不含控制页 ID，使刷新后的新页面可核对原操作；内容不同则拒绝复用 ID。
   fingerprint := jsonb_build_object('uid',caller,'action',p_action,'version',p_version,'game',p_game,'data',p_data);
   IF is_mutation THEN
     SELECT value INTO receipt FROM jsonb_array_elements(s.receipts) WHERE value->>'id'=p_operation::text;
@@ -146,6 +152,7 @@ BEGIN
     RAISE EXCEPTION 'superseded';
   END IF;
 
+  -- 先按上次心跳推导离线时刻并结算，再续当前请求的心跳，避免重连把已过期状态复活。
   IF s.phase='paused' AND s.offline_deadline<=now_at THEN
     s.phase:='finished'; s.reason:='disconnect_timeout'; s.winner:=NULL;
     s.offline_deadline:=NULL; changed:=true;
@@ -156,6 +163,7 @@ BEGIN
     IF s.guest_seen_at<=now_at-interval '15 seconds' OR s.guest_seen_at IS NULL THEN
       stale_at:=least(stale_at,coalesce(s.guest_seen_at+interval '15 seconds',now_at)); s.guest_synced:=false;
     END IF;
+    -- 比较行棋截止与最早离线时刻：先超时则判负，先离线则从该时刻冻结剩余时间。
     IF s.turn_deadline<=coalesce(stale_at,now_at) THEN
       s.phase:='finished'; s.reason:='timeout'; s.winner:=3-s.turn_seat;
       s.remaining_ms:=0; s.turn_deadline:=NULL; changed:=true;
@@ -191,6 +199,7 @@ BEGIN
   END IF;
   IF s.phase IN ('finished','closed') THEN s.undo_request:=NULL; END IF;
 
+  -- 显式连接会接管席位并清除同步确认；运行中的局面先暂停，待双方确认版本后恢复。
   IF p_action IN ('connect','create','apply') THEN
     IF seat=1 THEN s.owner_client:=p_client; s.owner_synced:=false;
     ELSE s.guest_client:=p_client; s.guest_synced:=false; END IF;
@@ -208,12 +217,14 @@ BEGIN
   IF NOT owner_online THEN s.owner_synced:=false; END IF;
   IF NOT guest_online THEN s.guest_synced:=false; END IF;
 
+  -- 只能确认调用方实际看到的版本；本次惰性结算改变了状态时必须先接收新快照。
   IF p_action='sync' THEN
     IF p_version IS DISTINCT FROM s.version OR changed THEN rejection:='state_conflict';
     ELSIF seat=1 THEN s.owner_synced:=true; ELSE s.guest_synced:=true; END IF;
   END IF;
 
   IF is_mutation AND NOT duplicate THEN
+    -- 认输不依赖轮到谁或具体棋步版本；仍校验本局 ID、控制页和同步身份，终局阶段不可覆盖。
     IF p_action<>'resign' AND (changed OR (p_action<>'emoji' AND p_version<>s.version)) THEN rejection:='state_conflict';
     ELSIF p_game<>s.game_id THEN rejection:='old_game';
     ELSIF s.phase='closed' THEN rejection:='room_closed';
@@ -238,6 +249,7 @@ BEGIN
         s.turn_deadline:=NULL; s.offline_deadline:=NULL; s.undo_request:=NULL; s.win_line:='[]';
         s.owner_ready:=false; s.guest_ready:=false; changed:=true;
       END IF;
+    -- 表情有独立频控与去重回执，但不递增棋局版本，也不重置回合截止时间。
     ELSIF p_action='emoji' THEN
       IF p_data->>'emoji' IS NULL OR p_data->>'emoji' NOT IN ('plead','cat','dog','heart','laugh','cry','angry','celebrate') THEN rejection:='invalid_emoji';
       ELSIF NOT owner_online OR NOT guest_online OR NOT s.owner_synced OR NOT s.guest_synced THEN rejection:='opponent_offline';
@@ -257,6 +269,7 @@ BEGIN
       ELSE
         SELECT value,(ordinality-1)::integer INTO target_move,target_index
           FROM jsonb_array_elements(s.moves) WITH ORDINALITY WHERE (value->>'seat')::integer=seat ORDER BY ordinality DESC LIMIT 1;
+        -- 旧棋步可能没有操作 ID，索引仅用于兼容这些记录；新棋步以 ID 固定悔棋目标。
         target_id:=coalesce(target_move->>'id','legacy-'||target_index::text);
         IF target_move IS NULL THEN rejection:='no_undo_move';
         ELSIF p_data->>'target' IS DISTINCT FROM target_id THEN rejection:='undo_target_changed';
@@ -264,6 +277,7 @@ BEGIN
         ELSIF coalesce((s.undo_last_at->>seat::text)::numeric,0)>extract(epoch FROM now_at)*1000-30000 THEN rejection:='undo_cooldown';
         ELSIF jsonb_array_length(s.moves)-target_index NOT BETWEEN 1 AND 2 THEN rejection:='undo_target_changed';
         ELSE
+          -- 退回申请者最近一手及其后的对方一手，恢复原手剩余时间并限制在 15～60 秒。
           restore_ms:=least(60000,greatest(15000,coalesce((target_move->>'remainingMs')::integer,60000)));
           s.undo_denials:=s.undo_denials-seat::text;
           s.undo_request:=jsonb_build_object('id',p_operation,'seat',seat,'target',target_id,'removeCount',jsonb_array_length(s.moves)-target_index,
@@ -286,6 +300,7 @@ BEGIN
             SELECT coalesce(jsonb_agg(value ORDER BY ordinality),'[]'::jsonb) INTO s.moves FROM jsonb_array_elements(s.moves) WITH ORDINALITY
               WHERE ordinality<=jsonb_array_length(s.moves)-(s.undo_request->>'removeCount')::integer;
             s.turn_seat:=undo_seat; s.remaining_ms:=(s.undo_request->>'restoreMs')::integer;
+            -- 只有对方同意并实际撤销才消耗次数，拒绝、撤回与超时不扣除。
             s.undo_used[undo_seat]:=s.undo_used[undo_seat]+1; s.win_line:='[]';
           ELSIF p_action='undo_respond' THEN
             s.undo_denials:=s.undo_denials||jsonb_build_object(undo_seat::text,jsonb_build_object(
@@ -316,6 +331,7 @@ BEGIN
           move_value:=jsonb_build_object('id',p_operation,'x',x,'y',y,'seat',seat,'color',color_value,
             'remainingMs',greatest(0,floor(extract(epoch FROM(s.turn_deadline-now_at))*1000)::integer));
           s.moves:=s.moves||jsonb_build_array(move_value);
+          -- 只需扫描经过新棋子的四条轴；双向累计同色连续棋子，长连同样获胜。
           FOR direction IN 1..4 LOOP
             dx:=CASE direction WHEN 2 THEN 0 ELSE 1 END;
             dy:=CASE direction WHEN 1 THEN 0 WHEN 4 THEN -1 ELSE 1 END;
@@ -342,12 +358,14 @@ BEGIN
     END IF;
   END IF;
 
+  -- 同步完成仍须等待悔棋协商结束；恢复使用冻结值，不重新赠送完整回合时间。
   IF s.phase='paused' AND owner_online AND guest_online AND s.owner_synced AND s.guest_synced THEN
     IF s.undo_request IS NULL THEN
       s.phase:='running'; s.turn_deadline:=now_at+s.remaining_ms*interval '1 millisecond'; changed:=true;
     END IF;
     IF s.offline_deadline IS NOT NULL THEN s.offline_deadline:=NULL; changed:=true; END IF;
   END IF;
+  -- 双方准备、在线且同步后才开局；再来一局更换 game_id 并交换黑白，隔离上一局的延迟操作。
   IF s.phase IN ('waiting','finished') AND s.owner_ready AND s.guest_ready AND owner_online AND guest_online AND s.owner_synced AND s.guest_synced THEN
     IF s.phase='finished' THEN s.round:=s.round+1; s.game_id:=gen_random_uuid(); s.black_seat:=3-s.black_seat; END IF;
     s.moves:='[]'; s.win_line:='[]'; s.winner:=NULL; s.reason:=NULL;
@@ -356,14 +374,17 @@ BEGIN
     s.offline_deadline:=NULL; s.owner_ready:=false; s.guest_ready:=false; changed:=true;
   END IF;
   IF changed THEN s.version:=s.version+1; END IF;
+  -- 仅成功写入保留去重回执，最多 512 条；重复请求返回当前快照而不再次执行副作用。
   IF is_mutation AND NOT duplicate AND rejection IS NULL THEN
     s.receipts:=s.receipts||jsonb_build_array(jsonb_build_object('id',p_operation,'request',fingerprint));
     IF jsonb_array_length(s.receipts)>512 THEN s.receipts:=s.receipts-0; END IF;
   END IF;
+  -- 无状态转换的轮询只更新在线信息，避免重复写入棋步、回执等较大字段。
   IF p_action='snapshot' AND NOT changed THEN
     UPDATE public.gomoku_rooms SET owner_seen_at=s.owner_seen_at,guest_seen_at=s.guest_seen_at,
       owner_synced=s.owner_synced,guest_synced=s.guest_synced WHERE id=s.id;
   ELSE
+  -- 所有状态和回执在本事务内持久化后返回，客户端据此展示确认结果。
   UPDATE public.gomoku_rooms SET
     guest_uid=s.guest_uid,guest_name=s.guest_name,applicant_uid=s.applicant_uid,applicant_name=s.applicant_name,application_id=s.application_id,
     owner_client=s.owner_client,guest_client=s.guest_client,owner_synced=s.owner_synced,guest_synced=s.guest_synced,

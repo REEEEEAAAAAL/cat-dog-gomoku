@@ -4,6 +4,7 @@ test('idle candidate stays local, explains its limits and fits phone screens',as
   test.skip(!!process.env.CLOUDBASE_DIAGNOSTIC_URL);
   const external:string[]=[];const errors:string[]=[];
   page.on('pageerror',e=>errors.push(e.message));
+  // 本地空闲诊断页应无需云请求，记录并阻断外部源，防止测试意外访问生产服务。
   await page.route('**/*',async route=>{
     if(new URL(route.request().url()).origin!==new URL(baseURL!).origin){external.push(new URL(route.request().url()).origin);await route.abort();}
     else await route.continue();

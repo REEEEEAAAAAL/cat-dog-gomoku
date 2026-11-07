@@ -5,6 +5,7 @@ import type { ChatCommand } from '../../src/game/chat-protocol';
 
 test.beforeEach(() => test.skip(!process.env.GOMOKU_LOCAL_SQL, 'Chat tests require the isolated local database'));
 
+// 使用两个独立触屏上下文和本地真实 SQL，审批前后分别校验聊天入口的访问边界。
 async function pair(browser: Browser) {
   const contexts = await Promise.all([360,390].map(width => browser.newContext({viewport:{width,height:844},hasTouch:true})));
   const [a,b] = await Promise.all(contexts.map(c=>c.newPage()));
@@ -127,6 +128,7 @@ test('lost send response retries with the same ID and failed send survives refre
       const p=route.request().postDataJSON() as ChatCommand;
       if (!p.p_operation) return route.continue();
       operations.push(p.p_operation);
+      // 先执行发送再丢回包，与直接阻断请求区分，验证服务器去重和客户端待确认恢复。
       if (drop) { drop=false; await route.fetch(); await route.abort(); } else await route.continue();
     });
     await g.a.locator('#chatToggle').click(); await g.a.locator('#chatInput').fill('回应丢失也只发送一次'); await g.a.locator('#chatSend').click();
@@ -160,6 +162,7 @@ test('an in-flight chat does not clear selection or block a move or undo',async(
     const mover=g.state.get(g.a)!.turnSeat===g.state.get(g.a)!.seat?g.a:g.b;
     const other=mover===g.a?g.b:g.a;
     const held=new Promise<void>(resolve=>{release=resolve;});
+    // 只挂起聊天回执，游戏 RPC 仍可通行，验证聊天在途不会阻塞落子和悔棋。
     await mover.route('**/rpc/gomoku_chat',async route=>{
       if (!route.request().postDataJSON().p_operation) return route.continue();
       const response=await route.fetch(); await held; await route.fulfill({response});
@@ -188,6 +191,7 @@ for (const width of [390,1280]) test(`new messages preserve unread state and scr
     if (width===1280) expect((await g.a.locator('#chatToggle').boundingBox())!.width).toBe(80);
     for (let i=0;i<6;i++) {
       await Promise.all([send(g.a,`猫方消息 ${i}\n这里有两行文字`),send(g.b,`狗方消息 ${i}\n这里也有两行文字`)]);
+      // 保留真实两秒发送间隔，避免为布局样本绕过服务端频控。
       if (i<5) await new Promise(resolve=>setTimeout(resolve,2100));
     }
     await expect(g.a.locator('#chatMessages .chat-message')).toHaveCount(12);

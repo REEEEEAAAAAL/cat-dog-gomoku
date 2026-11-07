@@ -12,12 +12,14 @@ let room: string;
 let current: Snapshot;
 let caller: Seat;
 const clients = [crypto.randomUUID(), crypto.randomUUID()];
+// 将迁移中的服务端取时替换为可控 SQL 函数，精确覆盖离线、回合截止和频控边界。
 const baseTime = Date.parse('2026-10-23T02:00:00Z');
 async function time(ms = 0) { await db.query("SELECT set_config('test.now',$1,false)", [new Date(baseTime + ms).toISOString()]); }
 async function user(uid: string, role = 'authenticated') {
   await db.query("SELECT set_config('request.uid',$1,false),set_config('request.role',$2,false)", [uid, role]);
 }
 async function as(seat: Seat) { caller = seat; await user(`player-${seat}-${room}`); }
+// 默认命令基于最近返回的快照；overrides 可构造旧版本、重复 ID 或错误控制页等边界。
 async function call(action: Action, data: Record<string, unknown> = {}, overrides: Record<string, unknown> = {}): Promise<Reply> {
   const params = { room, action, client: clients[caller - 1], operation: crypto.randomUUID(), version: current?.version ?? 0,
     game: current?.gameId ?? null, data, protocol: 1, ...overrides };
@@ -34,6 +36,7 @@ async function start() {
   await as(2); await call('connect'); await sync(); await call('ready');
   await as(1); await call('snapshot'); await call('ready'); expect(current.phase).toBe('running');
 }
+// 仅在隔离数据库中播种终局附近的棋盘，最终行为仍由真实 RPC 执行和断言。
 async function seed(moves: Move[], turn: Seat) {
   await db.query('UPDATE public.gomoku_rooms SET moves=$1,turn_seat=$2 WHERE id=$3', [JSON.stringify(moves), turn, room]);
   await as(turn); await call('snapshot');
@@ -47,6 +50,7 @@ beforeAll(async () => {
     CREATE FUNCTION public.test_now() RETURNS timestamptz LANGUAGE SQL AS $$ SELECT current_setting('test.now')::timestamptz $$;
     GRANT USAGE ON SCHEMA public,auth TO authenticated,anon;`);
   await time();
+  // 按正式迁移顺序安装累计函数定义；身份和时钟替身只存在于本测试数据库。
   const migration = await readFile('cloudbase/migrations/20261023010000_gomoku_mvp.sql', 'utf8');
   await db.exec(migration.replaceAll('clock_timestamp()', 'public.test_now()'));
   const extras = await readFile('cloudbase/migrations/20261023020000_undo_and_reactions.sql', 'utf8');
@@ -68,6 +72,7 @@ beforeEach(async () => {
   await call('create', { name: '狗狗', animal: 'dog' }); await sync();
 });
 
+// null 正文表示只读，发送则默认生成新 ID；允许显式传入 ID 以验证重试去重。
 async function chat(text: string | null = null, operation: string | null = text === null ? null : crypto.randomUUID(), target = room, client = clients[caller - 1]) {
   const result = await db.query<{ reply: ChatSnapshot }>('SELECT public.gomoku_chat($1,$2,$3,$4) AS reply', [target, client, operation, text]);
   expect(isChatSnapshot(result.rows[0].reply)).toBe(true);
@@ -132,6 +137,7 @@ describe('room text chat on isolated PostgreSQL', () => {
     await expect(chat(null,null,originalRoom)).rejects.toThrow('forbidden');
   });
 
+  // PGlite 在同一会话内处理这些调用，验证重复请求契约，不模拟多连接锁竞争。
   it('deduplicates simultaneous retries without modifying any game state or operation receipts', async () => {
     const before = await db.query('SELECT to_jsonb(r) AS state FROM public.gomoku_rooms r WHERE id=$1',[room]);
     const operation=crypto.randomUUID();
@@ -305,6 +311,7 @@ describe('game RPC on isolated PostgreSQL with controlled server clock', () => {
     await start(); const last = { x: 14, y: 14 };
     const moves: Move[] = Array.from({ length: 225 }, (_, i) => {
       const x = i % 15, y = Math.floor(i / 15);
+      // 每行按双列分组并交替颜色，构造满盘无连五；获胜分支仅改最后一行尾部。
       const color: Seat = win && y === 14 && x >= 10 ? 1 : (Math.floor(x / 2) + y) % 2 === 0 ? 1 : 2;
       return { x, y, color, seat: color === 1 ? current.blackSeat : (3 - current.blackSeat) as Seat };
     });

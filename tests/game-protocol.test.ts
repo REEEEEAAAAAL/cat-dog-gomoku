@@ -7,6 +7,7 @@ describe('RPC error and application boundaries', () => {
     expect(error).toBeInstanceOf(RpcError); expect(error.code).toBe('connect_required');
     expect(rpcError({ message: 'forbidden' }).code).toBe('forbidden');
   });
+  // 未识别错误必须保持可重试，不能因文本中包含相近词就误清理房间恢复状态。
   it('does not classify an arbitrary error containing a known word as terminal', () => {
     expect(rpcError({ message: 'temporarily_not_found_in_cache' }).code).toBe('unavailable');
     expect(rpcError({ code: 'forbidden' }).code).toBe('unavailable');

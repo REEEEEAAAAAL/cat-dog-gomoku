@@ -8,6 +8,7 @@ describe('board rules and display', () => {
     expect(winningLine(moves, moves[4])).toHaveLength(5); expect(outcome(moves, moves[4])).toBe('five');
   });
   it('validates the full draw fixture has no five anywhere', () => {
+    // 双列同色、逐行换色，使横竖斜方向都不足五连，用于验证满盘和棋判定。
     const moves: Move[] = Array.from({ length: 225 }, (_, i) => ({ x: i % 15, y: Math.floor(i / 15),
       color: ((Math.floor((i % 15) / 2) + Math.floor(i / 15)) % 2 + 1) as Seat, seat: 1 }));
     expect(moves.every(m => winningLine(moves, m).length === 0)).toBe(true);

@@ -3,6 +3,7 @@ import { chatLength, isChatSnapshot, validChatText } from '../src/game/chat-prot
 
 describe('chat protocol', () => {
   it('validates code points and blank/control input consistently', () => {
+    // 补充平面字符在 JS 中占两个 UTF-16 码元，协议按码点只计一个字。
     expect(chatLength('你😀')).toBe(2);
     for (const text of ['',' \n\t　 \uFEFF','x\u0000','x\u0001','x\u007f','😀'.repeat(101)]) expect(validChatText(text)).toBe(false);
     for (const text of ['😀'.repeat(100),'你好\n朋友','<b>文本</b>']) expect(validChatText(text)).toBe(true);

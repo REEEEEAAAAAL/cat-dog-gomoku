@@ -32,6 +32,7 @@ window.addEventListener('storage', event => {
 renderSound();
 const updateRoomLayout = setupRoomLayout();
 if (typeof CSS !== 'undefined' && typeof CSS.registerProperty === 'function') document.documentElement.classList.add('smooth-turn');
+// 每次加载生成控制页 ID；同一访客的新页接管席位后，旧页的请求会被服务端拒绝。
 const client = createId();
 const chat = new RoomChat(client);
 const roomPattern = /^(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[a-f0-9]{10})$/i;
@@ -49,8 +50,10 @@ let polling = false;
 let connected = false;
 let superseded = false;
 let selection: Point | null = null;
+// 以回包中的服务器时间和本地单调时钟显示倒计时，不使用可被手动调整的系统时间裁决。
 let lastReceiptAt = 0;
 let serverAtReceipt = 0;
+// 退出或换房递增 epoch，使旧请求的回包失效；uncertain 保留结果未知的写命令。
 let epoch = 0;
 let uncertain: Command | null = null;
 let lastStatus = '';
@@ -80,6 +83,7 @@ function forgetRoom(target = room) {
   if (storedRoom === target) { storedRoom = ''; localStorage.removeItem('gomoku.room'); }
 }
 
+// 这里只退出本地视图并保留恢复入口；真正关闭双方房间必须发送 leave RPC。
 function home() {
   soundEvents.reset(); audio.stop();
   epoch++; room = ''; pending = false; snapshot = null; connected = false; superseded = false;
@@ -98,6 +102,7 @@ function failure(error: unknown) {
   superseded = error instanceof RpcError && error.code === 'superseded';
   const terminal = error instanceof RpcError && ['not_found', 'expired', 'room_full', 'room_closed', 'forbidden',
     'application_pending', 'invalid_name', 'create_limit'].includes(error.code);
+  // 写操作未获回执时先保留原意图；只有房间不存在、过期或关闭才清掉恢复记录。
   if (terminal && (!uncertain || ['not_found', 'expired', 'room_closed'].includes(error.code))) {
     if (['not_found', 'expired', 'room_closed'].includes(error.code)) {
       forgetRoom(); sessionStorage.removeItem(`gomoku.operation.${room}`);
@@ -119,6 +124,7 @@ function canResign() {
     && snapshot.players[snapshot.seat - 1].synced && !document.hidden && performance.now() - lastReceiptAt < 15000;
 }
 
+// 本地门控只阻止明显过时的操作；是否合法落子和是否超时仍由服务端事务裁定。
 function canMove() {
   return replayStep === null && !!snapshot && snapshot.phase === 'running' && snapshot.turnSeat === snapshot.seat
     && snapshot.players.every(p => p.online && p.synced) && connected && !busy && !uncertain
@@ -126,6 +132,7 @@ function canMove() {
     && snapshot.turnDeadline !== null && snapshot.turnDeadline > serverAtReceipt + performance.now() - lastReceiptAt;
 }
 
+// 连五结束时显示获胜落子保存的剩余时间，避免误用下一回合的计时值。
 function clockRemaining(s: Snapshot, now: number) {
   return s.phase === 'running' && s.turnDeadline !== null ? Math.max(0, s.turnDeadline - now)
     : s.phase === 'finished' && s.reason === 'five' ? s.moves.at(-1)?.remainingMs ?? s.remainingMs : s.remainingMs;
@@ -166,6 +173,7 @@ function renderClock() {
 }
 
 function playerElements(s: Snapshot) {
+  // 手机布局把聊天按钮挂在玩家卡片内，重建卡片前先移出，保留同一按钮及其监听。
   const chatToggle = el('chatToggle');
   if (el('selfPlayer').contains(chatToggle)) el('interactionControls').appendChild(chatToggle);
   el('opponentPlayer').replaceChildren(); el('selfPlayer').replaceChildren();
@@ -193,6 +201,7 @@ function playerElements(s: Snapshot) {
 
 function renderBoard() {
   const s = snapshot;
+  // 回放只截取权威棋步用于渲染，不改快照，也不产生网络写入。
   const moves = replayStep === null ? s?.moves : s?.moves.slice(0, replayStep);
   const replaying = replayStep !== null;
   el('board').classList.toggle('replaying', replaying);
@@ -355,6 +364,7 @@ function render() {
   if (chatFocused) button('chatToggle').focus({ preventScroll: true });
 }
 
+// 轮询和操作回执可能交错到达；版本和服务器时间均不得倒退。
 function apply(reply: Reply, timely: boolean) {
   const wasConnected = connected;
   if (reply.pending) {
@@ -381,6 +391,7 @@ function apply(reply: Reply, timely: boolean) {
       feedback('对方残忍拒绝了你的悔棋申请😭', true);
     }
   }
+  // 在替换快照前观察事件，断线恢复仅建立基线；慢回执中的开局提示直接消费。
   const sounds = soundEvents.observe(reply, wasConnected && !document.hidden && performance.now() - lastReceiptAt < 15000);
   snapshot = reply; pending = false; room = reply.room;
   serverAtReceipt = reply.serverNow; lastReceiptAt = performance.now();
@@ -397,6 +408,7 @@ function command(action: Action, data: Record<string, unknown> = {}): Command {
     p_version: snapshot?.version ?? null, p_game: snapshot?.gameId ?? null, p_data: data, p_protocol: 1 };
 }
 
+// 所有游戏回包均经过同一入口，换房后返回 null，阻止旧请求继续执行后续动作。
 async function exchange(request: Command) {
   const active = epoch, requestedAt = performance.now();
   const reply = await send(request);
@@ -405,6 +417,7 @@ async function exchange(request: Command) {
   return reply;
 }
 
+// sync 确认的是具体版本；另一端同时改变状态时，用新快照重试，最多三次。
 async function synchronize() {
   for (let i = 0; i < 3 && snapshot && !snapshot.players[snapshot.seat - 1].synced && snapshot.phase !== 'closed'; i++) {
     await exchange(command('sync'));
@@ -434,6 +447,7 @@ function recoverUncertain() {
   } catch { notice('上次操作记录无法读取，请核对棋盘后继续', true); }
 }
 
+/** 先保存写意图再发送；结果未知时沿用原操作 ID 和版本重试，防止重复落子。 */
 async function mutate(action: Action, data: Record<string, unknown> = {}, retry = false, rebase = true,
   expected: Pick<Snapshot, 'version' | 'gameId'> | null = null) {
   if (!snapshot || (!retry && uncertain)) return;
@@ -445,6 +459,7 @@ async function mutate(action: Action, data: Record<string, unknown> = {}, retry 
   if (!reply || reply.pending) return;
   uncertain = null; sessionStorage.removeItem(`gomoku.operation.${room}`);
   selection = null;
+  // 仅对仍对应同局同一协商的准备或回应允许一次换版本重试；落子与认输不自动重构意图。
   const sameIntent = ((action === 'ready' || action === 'rematch') && reply.phase === (action === 'ready' ? 'waiting' : 'finished'))
     || ((action === 'undo_respond' || action === 'undo_cancel') && reply.phase === 'paused' && reply.undoRequest?.id === data.request);
   if (!reply.accepted && reply.rejection === 'state_conflict' && rebase && !retry && sameIntent && reply.gameId === request.p_game) {
@@ -471,6 +486,7 @@ async function connect(action: 'create' | 'apply' | 'connect', target: string) {
   if (!pending && !uncertain) connectionStatus();
 }
 
+// 已审批访客尚未建立控制页时才主动 connect；普通 snapshot 不应抢占另一页面。
 async function refreshRoom() {
   const active = epoch;
   try { await exchange(command('snapshot')); }
@@ -489,6 +505,7 @@ function connectionStatus() {
 
 async function poll() {
   if (!room || busy || polling || document.hidden || superseded || snapshot?.phase === 'closed') return;
+  // 非对局页面闲置两分钟后暂停轮询；对局和暂停协商期间继续维持在线心跳。
   if (snapshot?.phase !== 'running' && snapshot?.phase !== 'paused' && performance.now() - lastActivityAt >= 120000) {
     if (!idlePaused) {
       idlePaused = true; connected = false; render();
@@ -518,6 +535,7 @@ for (let y = 0; y < 15; y++) {
   for (let x = 0; x < 15; x++) {
     const cell = document.createElement('button'); cell.type = 'button'; cell.setAttribute('role', 'gridcell');
     cell.dataset.x = String(x); cell.dataset.y = String(y); cell.tabIndex = x === 7 && y === 7 ? 0 : -1;
+    // 区分轻触与纵向滚动；键盘生成的 click 另外处理，避免一次手势触发两次选择。
     let pointer: { x: number; y: number; moved: boolean } | null = null;
     cell.addEventListener('pointerdown', event => { pointer = { x: event.clientX, y: event.clientY, moved: false }; });
     cell.addEventListener('pointermove', event => {
@@ -563,6 +581,7 @@ async function loadInvitation() {
   invitationInfo = null; render();
   await login();
   const info = await inspectInvitation({ ...command('preview'), p_room: target });
+  // 预览期间可能已换房或改码，旧结果不能覆盖当前邀请的角色。
   if (!invited || epoch !== active || target !== input('roomInput').value.trim()) return;
   invitationInfo = info; animal = info.animal;
   input('nickname').placeholder = animal === 'cat' ? '猫猫' : '狗狗';
@@ -620,6 +639,7 @@ button('resign').onclick = () => {
   resignDialog.showModal();
 };
 button('dismissResign').onclick = () => resignDialog.close();
+// 确认框绑定打开时的 gameId，避免在新一局开始后提交上一局的认输。
 button('confirmResign').onclick = () => {
   if (!canResign() || snapshot?.gameId !== resignGame) return;
   const expected = { version: snapshot.version, gameId: resignGame };
@@ -627,6 +647,7 @@ button('confirmResign').onclick = () => {
   void run(() => mutate('resign', {}, false, false, expected));
 };
 const undoDialog = el('undoDialog') as HTMLDialogElement;
+// 先拉取权威棋步再展示影响范围，并保存预览版本，防止协商撤销用户未确认的棋步。
 button('undo').onclick = () => { void run(async () => {
   await exchange(command('snapshot')); await synchronize();
   if (!snapshot || snapshot.phase !== 'running') return;
@@ -655,6 +676,7 @@ button('cancelApplication').onclick = () => { void run(async () => {
   try {
     await exchange(command('withdraw', { application: applicationId })); home(); notice('已撤回加入申请。');
   } catch (error) {
+    // 撤回与房主批准竞争时保留已获批席位，转为恢复房间。
     if (!(error instanceof RpcError) || error.code !== 'application_changed') throw error;
     await refreshRoom(); notice('房主已确认加入，房间已恢复。');
   }
@@ -710,6 +732,7 @@ window.addEventListener('pageshow', () => { if (room && !document.hidden) void p
 for (const event of ['pointerdown', 'keydown'] as const) document.addEventListener(event, () => { lastActivityAt = performance.now(); }, { passive: true });
 let lastScheduledPollAt = performance.now();
 window.setInterval(() => {
+  // 已准备一方缩短查询周期以及时接收开局，其余状态保持五秒轮询。
   const awaitingStart = connected && snapshot && ['waiting', 'finished'].includes(snapshot.phase) && snapshot.players[snapshot.seat - 1].ready;
   const now = performance.now();
   if (now - lastScheduledPollAt < (awaitingStart ? 1000 : 5000)) return;

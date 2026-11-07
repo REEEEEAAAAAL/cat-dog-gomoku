@@ -4,6 +4,7 @@ import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 
 let db:PGlite;
 let legacyRoom:string;
+// 每例使用独立内存 PostgreSQL，先插入旧诊断数据再升级，验证迁移保留原记录。
 beforeEach(async()=>{
   db=new PGlite();
   await db.exec(`CREATE ROLE anon; CREATE ROLE authenticated; CREATE SCHEMA auth;
@@ -19,6 +20,7 @@ beforeEach(async()=>{
   await db.exec(await readFile('cloudbase/migrations/20261022151600_diagnostic_timer.sql','utf8'));
 });
 afterEach(async()=>{await db.close();});
+// 仅模拟网关注入的身份声明；SET ROLE 用例另行验证实际数据库访问权限。
 async function user(uid:string,role='authenticated'){await db.query("SELECT set_config('request.jwt.claim.sub',$1,false),set_config('request.jwt.claim.role',$2,false)",[uid,role]);}
 interface ProbeReply{count:number;version:number;seat:number;phase:string;turnSeat:number;remainingMs:number;turnDeadline:number|null;offlineDeadline:number|null;ownerOnline:boolean;guestOnline:boolean;loserSeat:number|null;winnerSeat:number|null;serverNow:number;expiresAt:number;accepted:boolean;rejection:string|null}
 async function command(room:string,action:string,id:string|null=null,version:number|null=null){

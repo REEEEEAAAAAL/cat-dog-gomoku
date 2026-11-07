@@ -8,6 +8,7 @@ import { createId } from './rules';
 
 interface Outgoing { id: string; text: string }
 
+/** 独立管理聊天发送与阅读；不占用前端游戏操作的 busy 状态，也不修改棋局版本。 */
 export class RoomChat {
   private readonly toggle = document.getElementById('chatToggle') as HTMLButtonElement;
   private readonly panel = document.getElementById('chatPanel')!;
@@ -24,6 +25,7 @@ export class RoomChat {
   private reading = false;
   private composing = false;
   private compositionEnded = 0;
+  // 房间或席位切换时递增，防止旧异步请求清空新会话的草稿和发送状态。
   private generation = 0;
   private readSeq = 0;
   private lastSync = 0;
@@ -44,6 +46,7 @@ export class RoomChat {
     this.input.addEventListener('input', () => this.renderControls());
     this.input.addEventListener('pointerdown', () => { this.inputFocusScrollY ??= window.scrollY; });
     this.input.addEventListener('focus', () => { this.inputFocusScrollY ??= window.scrollY; });
+    // 输入法确认候选字可能紧接 Enter 或 submit，组合结束后的短窗口仍禁止发送。
     this.input.addEventListener('compositionstart', () => { this.composing = true; this.renderControls(); });
     this.input.addEventListener('compositionend', () => {
       this.composing = false; this.compositionEnded = Date.now(); this.renderControls();
@@ -61,6 +64,7 @@ export class RoomChat {
       event.preventDefault();
       if (!this.composing && Date.now() - this.compositionEnded >= 250) void this.submit();
     });
+    // 使用可视视口尺寸和偏移避开软键盘，兼容键盘出现后页面整体上移的情况。
     const viewport = () => {
       const v = window.visualViewport;
       this.panel.style.setProperty('--chat-height', `${v?.height ?? innerHeight}px`);
@@ -79,6 +83,7 @@ export class RoomChat {
     window.setInterval(() => { void this.poll(); }, 1000);
   }
 
+  /** 以游戏快照刷新聊天；null 清空会话，available 表示当前连接允许收发。 */
   update(state: Snapshot | null, available: boolean) {
     if (state && state !== this.state) this.lastSync = Date.now();
     if (state?.room !== this.state?.room || state?.seat !== this.state?.seat) {
@@ -94,6 +99,7 @@ export class RoomChat {
     this.renderControls();
   }
 
+  // 待确认消息和已读位置按房间、席位隔离，只在当前标签页会话内保存。
   private key(suffix: string) { return `gomoku.chat.${this.state?.room}.${this.state?.seat}.${suffix}`; }
 
   private save() {
@@ -140,6 +146,7 @@ export class RoomChat {
     }
   }
 
+  // 只有最新消息确实处于可视区域才标记已读，软键盘遮挡或后台页面不消耗未读。
   private markRead() {
     if (this.panel.hidden || document.hidden || !this.atBottom()) return;
     const last = this.list.lastElementChild?.getBoundingClientRect();
@@ -167,10 +174,12 @@ export class RoomChat {
     this.latest.hidden = this.panel.hidden || this.atBottom();
   }
 
+  // 聊天 revision 独立去重；同版本回包也可能携带待发送消息的确认。
   private receive(data: ChatSnapshot) {
     if (data.room !== this.state?.room || data.revision < (this.data?.revision ?? -1)) return;
     const changed = data.revision !== this.data?.revision;
     const bottom = this.atBottom();
+    // 阅读历史时记录首个可见消息及偏移，重建最近 50 条窗口后尽量保持阅读位置。
     const anchor = Array.from(this.list.children).find(node => node.getBoundingClientRect().bottom > this.list.getBoundingClientRect().top);
     const offset = anchor ? anchor.getBoundingClientRect().top - this.list.getBoundingClientRect().top : 0;
     const anchorSeq = (anchor as HTMLElement | undefined)?.dataset.seq;
@@ -190,6 +199,7 @@ export class RoomChat {
         item.className = message.seat === this.state?.seat ? 'chat-message own' : 'chat-message';
         const label = document.createElement('small');
         label.textContent = `${this.state?.players[message.seat - 1].name || '玩家'}${message.seat === this.state?.seat ? '（你）' : ''}`;
+        // 用户输入始终按纯文本渲染，消息中的标签和脚本不会作为 HTML 解释。
         const body = document.createElement('p'); body.textContent = message.text;
         const bubble = document.createElement('div'); bubble.className = 'chat-bubble-group';
         if (message.seat === this.state?.seat) {
@@ -226,6 +236,7 @@ export class RoomChat {
   private async submit() {
     if (this.send.disabled || this.composing || !this.state) return;
     const generation = this.generation;
+    // 首次发送即固定 ID 和正文；回执丢失或刷新后重试必须沿用同一组数据。
     this.outgoing ??= { id: createId(), text: this.input.value };
     const outgoing = this.outgoing;
     this.save(); this.sending = true; this.status.textContent = ''; this.renderControls();
@@ -235,6 +246,7 @@ export class RoomChat {
       this.receive(result);
     } catch (error) {
       if (generation !== this.generation || this.outgoing?.id !== outgoing.id) return;
+      // 明确拒绝才解除待确认状态；网络失败保留原 ID，供服务端去重核对。
       const definite = error instanceof RpcError && ['invalid_chat','chat_rate_limit','room_closed','expired','forbidden','superseded'].includes(error.code);
       if (definite) { this.outgoing = null; this.save(); }
       this.status.textContent = definite ? error.message : '发送尚未确认，文字已保留，请重试；不会重复发送。';
@@ -243,6 +255,7 @@ export class RoomChat {
     }
   }
 
+  // 棋局快照已附带聊天；仅在面板活跃且主同步间隔较长时补读，失败后指数退避。
   private async poll() {
     if (!this.state?.chat || !this.available || this.panel.hidden || document.hidden || this.reading || this.sending
       || this.state.phase === 'closed' || Date.now() - this.activeAt >= 60000

@@ -1,3 +1,4 @@
+-- 扩展诊断 RPC 的身份判定以支持原生匿名登录，保留两席与计数去重约束。
 CREATE OR REPLACE FUNCTION public.gomoku_diag_command(p_room uuid, p_action text,
   p_operation uuid DEFAULT NULL, p_version integer DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
@@ -7,12 +8,14 @@ DECLARE
   receipt jsonb;
   changed boolean := false;
 BEGIN
+  -- anon 角色只有携带已登录匿名访客声明时才可访问，单独持有公开密钥不足以获取席位。
   IF caller IS NULL OR caller = '' OR (auth.role() IS DISTINCT FROM 'authenticated' AND NOT (auth.role() = 'anon' AND coalesce(auth.jwt()->>'is_anonymous','false') = 'true')) THEN RAISE EXCEPTION 'unauthorized'; END IF;
   IF p_action NOT IN ('join', 'snapshot', 'pulse') OR p_action IS NULL THEN RAISE EXCEPTION 'invalid_action'; END IF;
   IF p_room IS NULL THEN RAISE EXCEPTION 'invalid_room'; END IF;
   IF p_action = 'join' THEN
     INSERT INTO public.gomoku_diag_probe(id, owner) VALUES(p_room, caller) ON CONFLICT(id) DO NOTHING;
   END IF;
+  -- 与初始诊断版本相同，行锁保护入座及乐观版本检查，回执先于版本冲突判断。
   SELECT * INTO session FROM public.gomoku_diag_probe WHERE id = p_room FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'not_found'; END IF;
   IF session.expires_at <= clock_timestamp() THEN RAISE EXCEPTION 'expired'; END IF;

@@ -1,5 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// 默认启动本地预览；本地 SQL 模式改用测试适配器，指定 URL 时直接使用目标站点。
 export default defineConfig({
   testDir: './tests/game-e2e', outputDir: 'test-results/game', workers: 1, timeout: 150000,
   expect: { timeout: 15000 },

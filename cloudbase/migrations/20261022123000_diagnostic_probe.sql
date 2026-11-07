@@ -1,3 +1,4 @@
+-- 阶段 0 诊断数据独立于正式游戏，仅记录双人计数、版本与有限去重回执。
 CREATE TABLE public.gomoku_diag_probe (
   id uuid PRIMARY KEY,
   owner text NOT NULL,
@@ -8,6 +9,7 @@ CREATE TABLE public.gomoku_diag_probe (
   receipts jsonb NOT NULL DEFAULT '[]'::jsonb
 );
 
+-- 表级读取仅对参与者开放；写入只能通过固定 search_path 的鉴权函数完成。
 ALTER TABLE public.gomoku_diag_probe ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.gomoku_diag_probe FROM anon, authenticated;
 GRANT SELECT ON public.gomoku_diag_probe TO authenticated;
@@ -29,6 +31,7 @@ BEGIN
   IF p_action = 'join' THEN
     INSERT INTO public.gomoku_diag_probe(id, owner) VALUES(p_room, caller) ON CONFLICT(id) DO NOTHING;
   END IF;
+  -- 锁定诊断会话，使席位分配、版本检查和计数写入原子执行。
   SELECT * INTO session FROM public.gomoku_diag_probe WHERE id = p_room FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'not_found'; END IF;
   IF session.expires_at <= clock_timestamp() THEN RAISE EXCEPTION 'expired'; END IF;
@@ -41,6 +44,7 @@ BEGIN
   IF caller <> session.owner AND caller <> session.guest THEN RAISE EXCEPTION 'forbidden'; END IF;
   IF p_action = 'pulse' THEN
     IF p_operation IS NULL OR p_version IS NULL OR p_version < 0 THEN RAISE EXCEPTION 'invalid_operation'; END IF;
+    -- 先查原操作回执再检查当前版本，已保存但回包丢失的信号可安全重试。
     SELECT value INTO receipt FROM jsonb_array_elements(session.receipts) WHERE value->>'id' = p_operation::text;
     IF receipt IS NOT NULL THEN
       IF receipt->>'uid' <> caller OR (receipt->>'version')::integer <> p_version THEN RAISE EXCEPTION 'id_conflict'; END IF;

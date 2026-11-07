@@ -3,6 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 const localPort=Number(process.env.CLOUDBASE_PREVIEW_PORT||18789);
 const localUrl=`http://127.0.0.1:${localPort}`;
 
+// 默认验证本地诊断构建，只有显式指定诊断 URL 的用例才连接远端。
 export default defineConfig({
   testDir:'./tests/cloudbase-e2e',outputDir:'test-results/diagnostics',workers:1,
   use:{baseURL:process.env.CLOUDBASE_DIAGNOSTIC_URL||localUrl,trace:'off',screenshot:'off'},

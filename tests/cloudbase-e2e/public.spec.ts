@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
+// 平台访问提示可能丢失邀请片段，确认后重新打开原路径再等待页面初始化。
 async function enter(page:Page,path='.'){
   await page.goto(path);
   if(await page.title()==='风险提醒'){
@@ -15,6 +16,7 @@ test('public login, older browser APIs, two-seat HTTP polling and access boundar
   test.skip(!process.env.CLOUDBASE_DIAGNOSTIC_URL);
   test.setTimeout(90_000);
   const contexts=await Promise.all([browser.newContext(),browser.newContext()]);
+  // 在应用启动前移除较新 API，走实际兼容路径；测试只记录结果，不输出鉴权头。
   await Promise.all(contexts.map(context=>context.addInitScript(()=>{
     Object.defineProperty(AbortSignal,'timeout',{configurable:true,value:undefined});
     Object.defineProperty(Crypto.prototype,'randomUUID',{configurable:true,value:undefined});

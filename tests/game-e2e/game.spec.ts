@@ -4,6 +4,7 @@ import type { Snapshot } from '../../src/game/protocol';
 import { writeFile } from 'node:fs/promises';
 
 
+// 等待 CSS 模式和实际视口都更新后再量几何，避免缩放过程中的中间帧误报。
 async function resizeRoom(page: Page, viewport: { width: number; height: number }) {
   await page.setViewportSize(viewport);
   const { width, height } = viewport;
@@ -18,6 +19,7 @@ test.beforeEach(async ({ context }) => {
   }
 });
 
+// 公网可能先显示平台访问提示；通过后重开原路径以保留邀请片段。
 async function enter(page: Page, path = './') {
   if (process.env.GOMOKU_LOCAL_SQL || process.env.GOMOKU_URL?.startsWith('http://127.0.0.1')) {
     await page.route(/https:\/\/.*tcloudbase/, route => route.abort('blockedbyclient'));
@@ -33,6 +35,7 @@ async function enter(page: Page, path = './') {
   await expect(page.locator('#create')).toHaveCSS('min-height', '46px');
 }
 
+// 两个独立浏览器上下文隔离访客存储；默认组合为桌面与触屏模拟，不是真机网络验收。
 async function pair(browser: Browser, mobile = false, bothDesktop = false, verifyReadiness = false) {
   const contexts = await Promise.all([browser.newContext({ viewport: { width: mobile ? 390 : 1280, height: 844 }, hasTouch: mobile }),
     browser.newContext({ viewport: { width: bothDesktop ? 1280 : 360, height: bothDesktop ? 900 : 800 }, hasTouch: !bothDesktop })]);
@@ -119,6 +122,7 @@ test('ready notification survives refresh and mobile ready action stays above th
   } finally { await finish(game.contexts); }
 });
 
+// 通过预览和确认按钮落子，并检查真实 move 回包已接受，不以棋盘 DOM 更新代替持久化确认。
 async function play(page: Page, x: number, y: number, touch = false) {
   const cell = page.locator(`#board button[data-x="${x}"][data-y="${y}"]`);
   await expect(cell).toHaveAttribute('aria-disabled', 'false');
@@ -328,6 +332,7 @@ test('two players complete a real game, approve entry, recover a lost acknowledg
     let dropped = false;
     await black.route('**/rpc/gomoku_command', async route => {
       if (!dropped && route.request().postDataJSON()?.p_action === 'move') {
+        // 服务端先执行成功，再丢弃浏览器回包，专门验证结果未知时的原 ID 重试。
         dropped = true; const result = await route.fetch(); expect(result.ok()).toBe(true); await route.abort();
       } else await route.continue();
     });
@@ -995,6 +1000,7 @@ test('replay is local, independent, responsive and resets only when a rematch st
     }
     await a.evaluate(async () => { await document.fonts.ready; });
     await a.clock.install();
+    // 冻结定时轮询后记录请求，确保回放操作本身不会产生游戏命令或资源请求。
     await a.clock.pauseAt(new Date());
     await a.waitForTimeout(250);
     const requests: string[] = [];
@@ -1198,6 +1204,7 @@ test('replay numbers fit dense end snapshots on phones and desktops', async ({ b
     await page.route('**/rpc/gomoku_command', async route => {
       const response = await route.fetch();
       const snapshot = await response.json() as Snapshot;
+      // 仅替换客户端回包构造密集棋面，验证三位步数排版；这里不验证和棋规则。
       const moves = Array.from({ length: 225 }, (_, index) => {
         const color = index % 2 === 0 ? 1 : 2;
         return { x: index % 15, y: Math.floor(index / 15), color, seat: color === 1 ? snapshot.blackSeat : 3 - snapshot.blackSeat };

@@ -2,6 +2,7 @@ import cloudbase from '@cloudbase/js-sdk';
 import { fetchJsonWithTimeout } from './http';
 import './style.css';
 
+// 阶段 0 诊断使用独立表和 RPC，计数信号与正式棋步无关。
 type Phase = 'waiting' | 'running' | 'paused' | 'timeout' | 'aborted';
 type Action = 'join' | 'snapshot' | 'pulse' | 'start';
 interface ProbeReply {
@@ -31,6 +32,7 @@ const app=env&&accessKey?cloudbase.init({env,accessKey,region:'ap-shanghai'}):nu
 let room=location.hash.slice(1)||sessionStorage.getItem('cloudbaseProbeRoom')||'';
 if(!/^[a-f0-9-]{36}$/.test(room)) room='';
 history.replaceState(null,'',location.pathname);
+// 重连时递增代次，停止上一轮查询继续安排轮询或更新连接提示。
 let generation=0;
 let version=0;
 let count=0;
@@ -50,10 +52,12 @@ let simulatedDisconnect=false;
 let pollTimer:number|undefined;
 let pollBusy=false;
 const times:number[]=[];
+// 十秒轮询配合服务端十五秒节流写心跳及二十五秒离线阈值，控制诊断写入频率。
 const pollIntervalMs=10_000;
 const heartbeatWriteIntervalMs=15_000;
 const status=(text:string)=>{element('status').textContent=text;};
 
+// 兼容缺少 randomUUID 的浏览器，仍以加密随机数生成符合 v4 格式的房间 ID。
 function createId(){
   if(typeof crypto.randomUUID==='function')return crypto.randomUUID();
   const bytes=crypto.getRandomValues(new Uint8Array(16));
@@ -66,6 +70,7 @@ function stopPolling(){
   if(pollTimer!==undefined){window.clearInterval(pollTimer);pollTimer=undefined;}
 }
 
+// RPC 回包属于外部数据，先校验结构，再更新计时和交互状态。
 function isProbeReply(value:unknown):value is ProbeReply{
   if(!value||typeof value!=='object')return false;
   const reply=value as Record<string,unknown>;
@@ -114,6 +119,7 @@ function applyReply(reply:ProbeReply,requestRoom:string){
   version=reply.version;count=reply.count;seat=reply.seat;phase=reply.phase;turnSeat=reply.turnSeat;
   remainingMs=reply.remainingMs;ownerOnline=reply.ownerOnline;guestOnline=reply.guestOnline;
   lastServerNow=reply.serverNow;
+  // 将服务端剩余时长映射到单调时钟；本地倒计时归零后仍等待服务端判定。
   timerDeadlinePerf=reply.turnDeadline===null?null:performance.now()+reply.turnDeadline-reply.serverNow;
   element('count').textContent=String(count);
   renderTimer();
@@ -134,6 +140,7 @@ async function call(action:Action,id:string|null=null):Promise<ProbeReply>{
   return body;
 }
 
+// 一次只允许一个轮询在途；模拟断线仅停掉请求，由服务端按最后心跳判断离线。
 async function refreshSnapshot(current:number){
   if(!joined||pollBusy||current!==generation||simulatedDisconnect)return;
   pollBusy=true;polls++;
@@ -200,6 +207,7 @@ button('startTimer').onclick=()=>{
 button('send').onclick=()=>{
   if(!joined)return;
   button('send').disabled=true;const at=performance.now();
+  // 先核对当前版本再发唯一操作 ID，延迟样本包含核对与持久化确认两次请求。
   void call('snapshot').then(snapshot=>{
     if(!snapshot.accepted)throw new Error(snapshot.rejection??'请重新同步');
     return call('pulse',createId());
