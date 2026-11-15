@@ -2,7 +2,7 @@
 
 <p align="center">English | <a href="README.zh-CN.md">简体中文</a></p>
 
-<p align="center"><a href="https://cat-and-dog-gomoku-d4c9e5cfbbfc0-1513741929.tcloudbaseapp.com/gomoku/">Play online</a> | <a href="#screenshots">Screenshots</a> | <a href="https://github.com/REEEEEAAAAAL/cat-dog-gomoku">Source code</a></p>
+<p align="center"><a href="https://ricky-d1gmj19kv6009dbce-1516945955.tcloudbaseapp.com/gomoku/">Play online</a> | <a href="#screenshots">Screenshots</a> | <a href="https://github.com/REEEEEAAAAAL/cat-dog-gomoku">Source code</a></p>
 
 A small online Gomoku game for two people. Pick a cat or dog, send an invitation, and play together on a 15×15 board. Built for phones, tablets, and desktops, with no account registration and a Simplified Chinese interface.
 
@@ -94,18 +94,21 @@ The CloudBase SDK may produce a Vite large-chunk advisory without failing the bu
 
 ## Deploy
 
-Use your own CloudBase PostgreSQL environment and authenticated CLI. Replace the project-specific `envId` in `cloudbaserc.json`, configure anonymous login and allowed web origins, and set `.env.local` before building. Verify the target and its billing settings before applying changes.
+Use a CloudBase PostgreSQL environment and an authenticated CLI. Copy `.env.example` to `.env.local` and set the environment ID and its Publishable Key. Both the frontend build and `cloudbaserc.json` use `VITE_CLOUDBASE_ENV_ID` as the target. Enable static hosting and anonymous sign-in, then add the CloudBase-assigned hosting domain to the allowed domains. Verify the target and its billing settings before applying changes.
 
-```sh
+```powershell
+$targetEnv = node --env-file=.env.local -p "process.env.VITE_CLOUDBASE_ENV_ID ?? ''"
+if (-not $targetEnv) { throw 'Set VITE_CLOUDBASE_ENV_ID in .env.local' }
 npm run build:cloudbase
-tcb db pg migration list --env-id YOUR_ENV_ID
-tcb db pg migration up --dry-run --env-id YOUR_ENV_ID
-tcb db pg migration up --env-id YOUR_ENV_ID --yes
-tcb db pg migration list --env-id YOUR_ENV_ID
-tcb hosting deploy ./dist/cloudbase/game gomoku --env-id YOUR_ENV_ID --safe --verify
+tcb db pg migration list --env-id $targetEnv
+tcb db pg migration up --dry-run --env-id $targetEnv
+tcb db pg migration up --env-id $targetEnv --yes
+tcb db pg migration list --env-id $targetEnv
+tcb hosting deploy ./dist/cloudbase/game gomoku --env-id $targetEnv --safe --verify
+tcb hosting deploy ./dist/cloudbase/site gomoku-diag --env-id $targetEnv --safe --verify
 ```
 
-Apply the ordered files in `cloudbase/migrations/` without editing previously applied migrations. They include the separate diagnostic schema as well as the game schema. The build packages game assets in `dist/cloudbase/game/`, diagnostic assets in `dist/cloudbase/site/`, and SQL in `dist/cloudbase/database/`. Upload only the intended frontend directory. The optional diagnostic page can be deployed separately to `gomoku-diag/`.
+Apply the ordered files in `cloudbase/migrations/` without editing previously applied migrations. They include the separate diagnostic schema as well as the game schema. The build packages game assets in `dist/cloudbase/game/`, diagnostic assets in `dist/cloudbase/site/`, and SQL in `dist/cloudbase/database/`. The game footer links to `gomoku-diag/` on the same domain, so an initial deployment uploads both frontend directories. Apply SQL through the migration command.
 
 Check migration history and apply only pending migrations before deploying a client that depends on them.
 

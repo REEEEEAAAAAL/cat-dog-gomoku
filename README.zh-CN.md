@@ -2,7 +2,7 @@
 
 <p align="center"><a href="README.md">English</a> | 简体中文</p>
 
-<p align="center"><a href="https://cat-and-dog-gomoku-d4c9e5cfbbfc0-1513741929.tcloudbaseapp.com/gomoku/">在线游玩</a> | <a href="#截图">截图</a> | <a href="https://github.com/REEEEEAAAAAL/cat-dog-gomoku">源代码</a></p>
+<p align="center"><a href="https://ricky-d1gmj19kv6009dbce-1516945955.tcloudbaseapp.com/gomoku/">在线游玩</a> | <a href="#截图">截图</a> | <a href="https://github.com/REEEEEAAAAAL/cat-dog-gomoku">源代码</a></p>
 
 一个为两个人设计的在线五子棋小游戏。选择猫猫或狗狗，分享邀请，在 15×15 棋盘上一起下一局。支持手机、平板与电脑，无需注册账号，游戏界面为简体中文。
 
@@ -94,18 +94,21 @@ CloudBase SDK 可能触发 Vite 的大包提示，不影响构建成功。
 
 ## 部署
 
-使用自己的 CloudBase PostgreSQL 环境及已登录的 CLI。替换 `cloudbaserc.json` 中的项目环境 ID，配置匿名登录与允许的网页来源，构建前填写 `.env.local`。执行变更前核对目标及计费设置。
+使用 CloudBase PostgreSQL 环境及已登录的 CLI。将 `.env.example` 复制为 `.env.local`，填写环境 ID 和对应的 Publishable Key。前端构建和 `cloudbaserc.json` 均使用 `VITE_CLOUDBASE_ENV_ID` 指定目标。开通静态托管、启用匿名登录，并将 CloudBase 分配的托管域名加入安全域名。执行变更前核对目标及计费设置。
 
-```sh
+```powershell
+$targetEnv = node --env-file=.env.local -p "process.env.VITE_CLOUDBASE_ENV_ID ?? ''"
+if (-not $targetEnv) { throw '请在 .env.local 设置 VITE_CLOUDBASE_ENV_ID' }
 npm run build:cloudbase
-tcb db pg migration list --env-id YOUR_ENV_ID
-tcb db pg migration up --dry-run --env-id YOUR_ENV_ID
-tcb db pg migration up --env-id YOUR_ENV_ID --yes
-tcb db pg migration list --env-id YOUR_ENV_ID
-tcb hosting deploy ./dist/cloudbase/game gomoku --env-id YOUR_ENV_ID --safe --verify
+tcb db pg migration list --env-id $targetEnv
+tcb db pg migration up --dry-run --env-id $targetEnv
+tcb db pg migration up --env-id $targetEnv --yes
+tcb db pg migration list --env-id $targetEnv
+tcb hosting deploy ./dist/cloudbase/game gomoku --env-id $targetEnv --safe --verify
+tcb hosting deploy ./dist/cloudbase/site gomoku-diag --env-id $targetEnv --safe --verify
 ```
 
-按顺序应用 `cloudbase/migrations/` 中的文件，不修改已应用的迁移。其中包含独立诊断结构与游戏结构。构建将游戏放入 `dist/cloudbase/game/`，诊断页放入 `dist/cloudbase/site/`，SQL 放入 `dist/cloudbase/database/`。只上传所需前端目录，诊断页可单独部署至 `gomoku-diag/`。
+按顺序应用 `cloudbase/migrations/` 中的文件，不修改已应用的迁移。其中包含独立诊断结构与游戏结构。构建将游戏放入 `dist/cloudbase/game/`，诊断页放入 `dist/cloudbase/site/`，SQL 放入 `dist/cloudbase/database/`。游戏页脚链接到同一域名下的 `gomoku-diag/`，因此首次完整部署需要上传两个前端目录。SQL 通过迁移命令应用。
 
 部署依赖数据库变更的客户端前，先核对迁移历史，仅应用待执行的迁移。
 

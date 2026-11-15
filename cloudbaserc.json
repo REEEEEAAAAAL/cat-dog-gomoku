@@ -1,5 +1,5 @@
 {
-  "envId": "cat-and-dog-gomoku-d4c9e5cfbbfc0",
+  "envId": "{{env.VITE_CLOUDBASE_ENV_ID}}",
   "$schema": "https://static.cloudbase.net/cli/cloudbaserc.schema.json",
   "app": {
     "serviceName": "gomoku-diag",
