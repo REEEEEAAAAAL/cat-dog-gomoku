@@ -13,7 +13,7 @@ The hosted game uses a CloudBase prepaid environment with limited validity and q
 - Multiple private rooms can host games at the same time, each limited to two players, with independent game states that do not affect one another. Join via invitation links or ten-character room codes; play starts after host approval and both players are ready.
 - Five or more stones in a row wins. Preview a position, then confirm the move to avoid accidental placement; mouse, touch, and keyboard are supported.
 - Server-managed 60-second turns, disconnect pauses, and recovery after refresh. A five-minute unresolved disconnect ends the round without a winner.
-- Negotiated undo, up to two successful uses per player per round; both players review the affected stones before approval.
+- Negotiated undo, each player starts the round with two chances. Both players review the affected stones before approval.
 - Resignation at any time after a round starts, with confirmation and a server-persisted result; no opponent approval is needed.
 - Review the finished round with a timeline, move numbers, and step controls. Each player browses independently; undone moves are excluded and past rounds are not permanently archived.
 - Rematches with swapped colors, eight fixed reactions, and sound effects with a persistent mute setting, including an accelerating warning during the final ten seconds of a turn.
@@ -127,7 +127,11 @@ Invitations use URL fragments and need no custom server routing. Save the previo
 
 ## Screenshots
 
-Full-page views from a local two-player game at representative browser viewport sizes. Tablet and phone views use browser emulation. The room controls provide separate actions for leaving and closing the room.
+Screenshots from a local two-player game at representative browser viewport sizes. Tablet and phone views use browser emulation. The room controls provide separate actions for leaving and closing the room.
+
+Home with a room code field and an option to resume the last game.
+
+<img src="docs/screenshots/home.png" alt="Home with room creation, join, and resume controls" width="700" />
 
 Desktop (1280×844), portrait tablet (768×1024), and phone (390×844).
 
@@ -138,6 +142,10 @@ Desktop (1280×844), portrait tablet (768×1024), and phone (390×844).
 Compact layout in a low-height window (1024×675).
 
 <img src="docs/screenshots/compact.png" alt="Low-height layout with a compact header and the board beside player controls" width="700" />
+
+Pending undo request with the affected moves and time left to respond.
+
+<img src="docs/screenshots/undo.png" alt="Undo negotiation during a game" width="700" />
 
 Post-game replay with move numbers and timeline controls.
 

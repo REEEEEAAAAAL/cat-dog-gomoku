@@ -102,6 +102,77 @@ async function play(page: Page, x: number, y: number) {
 }
 test.beforeEach(() => { test.skip(!process.env.GOMOKU_LOCAL_SQL, 'Sound flows use isolated local PostgreSQL only'); });
 
+test('undo credit chimes only for the sender and sends a regular message at full credit', async ({ browser }) => {
+  const g = await pair(browser), { black, white } = g;
+  const dings = async (page: Page) => (await voices(page)).filter(v => v.frequency === 1318.51).length;
+  const fullNotice = '你已经有2次悔棋机会啦！先用掉它们~';
+  const enter = async (text: string) => {
+    await black.locator('#chatInput').fill(text);
+    await black.locator('#chatInput').press('Enter');
+  };
+  try {
+    let creditRequests = 0;
+    const messageIds: string[] = [];
+    black.on('request', request => {
+      if (request.url().endsWith('/rpc/gomoku_command') && request.postDataJSON().p_action === 'iamking') creditRequests++;
+      if (request.url().endsWith('/rpc/gomoku_chat') && request.postDataJSON().p_text === 'iamking') messageIds.push(request.postDataJSON().p_operation);
+    });
+    await black.route('**/rpc/gomoku_chat', route => route.request().postDataJSON().p_text === 'iamking' ? route.abort() : route.continue());
+    await black.locator('#chatToggle').click();
+    await enter('iamking');
+    await expect(black.locator('#chatStatus')).toContainText('尚未确认');
+    await black.unroute('**/rpc/gomoku_chat');
+    await black.reload();
+    await black.locator('#chatToggle').click();
+    await expect(black.locator('#chatSend')).toHaveText('重试发送');
+    await black.locator('#chatSend').click();
+    await expect(black.locator('#chatAvailability')).toHaveText(fullNotice);
+    await expect(black.locator('#chatStatus')).toHaveText(fullNotice);
+    await expect(black.locator('#chatInput')).toHaveValue('');
+    expect(creditRequests).toBe(1);
+    expect(messageIds).toHaveLength(2);
+    expect(messageIds[1]).toBe(messageIds[0]);
+    expect(await dings(black)).toBe(0);
+    await white.locator('#chatToggle').click();
+    await expect(white.locator('#chatMessages .chat-message p')).toHaveText(['iamking']);
+    await expect(white.locator('#chatStatus')).toBeEmpty();
+    await white.locator('#chatClose').click();
+    await black.locator('#chatClose').click();
+    await play(black, 7, 7);
+    await black.locator('#undo').click(); await black.locator('#requestUndo').click();
+    await white.locator('#acceptUndo').click();
+    await expect(black.locator('#selfPlayer')).toContainText('悔棋：剩余1次');
+
+    await black.route('**/rpc/gomoku_command', async route => {
+      if (route.request().postDataJSON().p_action !== 'iamking') return route.continue();
+      await route.fetch(); await route.abort();
+    });
+    await black.locator('#chatToggle').click(); await enter('iamking');
+    await expect(black.locator('#chatStatus')).toContainText('尚未确认');
+    expect(await dings(black)).toBe(0);
+    await black.unroute('**/rpc/gomoku_command');
+    await black.reload(); await black.locator('#chatToggle').click();
+    await expect(black.locator('#chatSend')).toHaveText('重试发送');
+    await black.locator('#chatSend').click();
+    await expect(black.locator('#chatAvailability')).toHaveText('皇帝驾到！本局悔棋机会 +1 👑');
+    await expect.poll(() => dings(black)).toBe(1);
+    await expect(black.locator('#selfPlayer')).toContainText('悔棋：剩余2次');
+    await expect(white.locator('#opponentPlayer')).toContainText('悔棋：剩余2次');
+    await enter('iamking'); await expect(black.locator('#chatInput')).toHaveValue('');
+    await expect(black.locator('#chatAvailability')).toHaveText(fullNotice);
+    await expect(black.locator('#selfPlayer')).toContainText('悔棋：剩余2次');
+    expect(await dings(black)).toBe(1);
+    expect(await dings(white)).toBe(0);
+    await white.locator('#chatToggle').click();
+    await expect(white.locator('#chatMessages .chat-message p')).toHaveText(['iamking', 'iamking']);
+    await expect(white.locator('#chatStatus')).toBeEmpty();
+    await white.locator('#chatInput').fill('iamking!');
+    await white.locator('#chatInput').press('Enter');
+    await expect(black.locator('#chatMessages .chat-message p')).toHaveText(['iamking', 'iamking', 'iamking!']);
+    expect(g.errors).toEqual([]);
+  } finally { await Promise.all(g.contexts.map(c => c.close())); }
+});
+
 test('countdown warning follows both displayed clocks and accelerates on desktop and touch', async ({ browser }) => {
   const game = await pair(browser), { a, b } = game;
   const deadline = Date.now() + 11500;

@@ -141,6 +141,16 @@ export class GameAudio {
     } catch (error) { this.unavailable(error); }
   }
 
+  /** 本页收到悔棋额度后播放短铃音，基音与较快衰减的泛音同时起音。 */
+  playUndoCredit() {
+    if (!this.enabled || document.hidden || this.context?.state !== 'running') return;
+    try {
+      const at = this.context.currentTime;
+      this.tone(1318.51, at, 1.0, .72, 'sine');
+      this.tone(2637.02, at, .38, .18, 'sine');
+    } catch (error) { this.unavailable(error); }
+  }
+
   play(sounds: readonly GameSound[]) {
     if (!sounds.length || !this.enabled || document.hidden || this.context?.state !== 'running') return;
     // 开局提示只即时播放已解码录音，错过后不等待下载或下一次手势补播。

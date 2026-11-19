@@ -23,7 +23,7 @@ export default defineConfig({
         CREATE FUNCTION auth.uid() RETURNS text LANGUAGE sql AS $$ SELECT current_setting('request.uid',true) $$;
         CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql AS $$ SELECT 'authenticated'::text $$;
         CREATE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql AS $$ SELECT '{}'::jsonb $$;`);
-      for (const file of (await readdir('cloudbase/migrations')).sort().filter(f => f.includes('gomoku_mvp') || f.includes('undo_and_reactions') || f.includes('application_lifecycle') || f.includes('interaction_feedback') || f.includes('invitation_preview') || f.includes('resign') || f.includes('text_chat'))) {
+      for (const file of (await readdir('cloudbase/migrations')).sort().filter(f => f.includes('gomoku_mvp') || f.includes('undo_and_reactions') || f.includes('application_lifecycle') || f.includes('interaction_feedback') || f.includes('invitation_preview') || f.includes('resign') || f.includes('text_chat') || f.includes('undo_bonus'))) {
         await db.exec(await readFile(`cloudbase/migrations/${file}`, 'utf8'));
       }
       const installed = await db.query<{ definition: string }>("SELECT pg_get_functiondef('public.gomoku_game_command(text,text,uuid,uuid,integer,uuid,jsonb,integer)'::regprocedure) AS definition");

@@ -113,6 +113,12 @@ describe('confirmed snapshot sound events', () => {
     expect(events.observe(state({ version: 2, moves: [], players }), true)).toEqual(['undo']);
     expect(events.observe(state({ version: 3, moves: [move('b')], players }), true)).toEqual(['move']);
   });
+  it('plays undo when a bonus masks the spent credit between polls', () => {
+    const events = new SoundEvents();
+    events.observe(state({ players: [{ ...player, undoUsed: 0 }, player] }), true);
+    expect(events.observe(state({ version: 2, players: [{ ...player, undoUsed: 1 }, player] }), true)).toEqual(['undo']);
+    expect(events.observe(state({ version: 3, players: [{ ...player, undoLeft: 2, undoUsed: 1 }, player] }), true)).toEqual([]);
+  });
   it.each(['five', 'timeout', 'resign'] as const)('plays opposite results for %s and sequences a final move first', reason => {
     for (const seat of [1, 2] as const) {
       const events = new SoundEvents(); events.observe(state({ seat }), true);

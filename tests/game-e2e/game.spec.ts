@@ -68,6 +68,7 @@ async function pair(browser: Browser, mobile = false, bothDesktop = false, verif
   await expect(b.locator('#dog')).toBeVisible();
   await expect(b.locator('#cat')).toBeHidden();
   await expect(b.locator('#invitationRole')).toContainText('狗狗');
+  await expect(b.locator('#roomInput')).toHaveValue((await a.locator('#roomCode').textContent())!);
   const joinBox = await b.locator('#joinEntry').boundingBox(), createBox = await b.locator('#create').boundingBox();
   expect(joinBox!.y + joinBox!.height).toBeLessThanOrEqual(createBox!.y);
   await b.locator('#join').click();
@@ -191,6 +192,14 @@ test('home supports narrow phones and desktop without overflow', async ({ page }
   expect(await favicon.text()).toContain('viewBox="0 0 36 36"');
   for (const width of [320, 360, 390, 430, 900, 1024, 1280]) {
     await resizeRoom(page, { width, height: 844 });
+    const statusSpacing = await page.locator('#connectionBar').evaluate(row => {
+      const text = row.querySelector('#notice')!.getBoundingClientRect();
+      const footer = document.querySelector('footer')!;
+      return { border: getComputedStyle(footer).borderTopWidth, gap: footer.getBoundingClientRect().top - text.bottom };
+    });
+    expect(statusSpacing.border).toBe('1px');
+    expect(statusSpacing.gap).toBeGreaterThanOrEqual(8);
+    expect(statusSpacing.gap).toBeLessThanOrEqual(12);
     const cat = await page.locator('#cat').boundingBox(), dog = await page.locator('#dog').boundingBox();
     expect(cat!.x).toBeLessThan(dog!.x);
     expect(await page.locator('#introArt .avatar').first().evaluate(node => node.outerHTML)).toBe(await page.locator('#cat .avatar').evaluate(node => node.outerHTML));
@@ -203,7 +212,7 @@ test('home supports narrow phones and desktop without overflow', async ({ page }
     });
     expect(mark).toEqual({ blackWidth:'20px', blackHeight:'20px', whiteWidth:'20px', whiteHeight:'20px', radius:'50%' });
     if (width >= 900) {
-      const inset = Math.max(0, (width - 1160) / 2) + 56;
+      const inset = Math.max(0, (width - 1248) / 2) + 48;
       for (const selector of ['.masthead', 'main', 'footer']) {
         const box = await page.locator(selector).boundingBox();
         expect(Math.abs(box!.x - inset)).toBeLessThan(1);
@@ -215,6 +224,14 @@ test('home supports narrow phones and desktop without overflow', async ({ page }
       expect(caption!.y - Math.max(...bounds.map(box => box!.y + box!.height))).toBeGreaterThanOrEqual(16);
     }
   }
+  await page.locator('#roomInput').fill('123');
+  await page.locator('#join').click();
+  await expect(page.locator('#roomInput')).toBeFocused();
+  await expect(page.locator('#roomInput')).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('#roomError')).toBeVisible();
+  await page.locator('#roomInput').fill('');
+  await expect(page.locator('#roomError')).toBeHidden();
+  await expect(page.locator('#roomInput')).not.toHaveAttribute('aria-invalid', 'true');
   await page.screenshot({path:'test-results/screenshots/invitation-home-desktop.png',fullPage:true});
 });
 
@@ -768,13 +785,29 @@ test('invited visitors see only the remaining dog role and a prominent join acti
     await expect(b.locator('#dog')).toBeVisible();await expect(b.locator('#cat')).toBeVisible();
     await expect(b.locator('#create')).toHaveText('创建房间');
     await enter(b, `./#${await a.locator('#roomCode').textContent()}`);
+    await resizeRoom(b, {width:1280,height:844});
     await b.locator('#join').click();
+    await expect(b.locator('#asideTurn > #pendingPanel')).toBeVisible();
+    await expect(b.locator('#turnBar')).toBeHidden();
     await expect(b.locator('#pendingPanel h2')).toHaveText('等房主确认ing...');
     await expect(b.locator('#pendingPanel p')).toHaveText('加入申请已送达！确认后就能看到棋局。再稍微等一下下哦~');
+    await expect(b.locator('#cancelApplication')).toBeInViewport({ratio:1});
+    await resizeRoom(b, {width:390,height:844});
+    await expect(b.locator('#roomAside > #pendingPanel')).toBeVisible();
+    await resizeRoom(b, {width:900,height:650});
+    await expect(b.locator('#asideTurn > #pendingPanel')).toBeVisible();
+    await expect(b.locator('#cancelApplication')).toBeInViewport({ratio:1});
+    await b.locator('#cancelApplication').click();
+    await expect(b.locator('#home')).toBeVisible();
+    await expect(a.locator('#applicationPanel')).toBeHidden();
+    await enter(b, `./#${await a.locator('#roomCode').textContent()}`);
+    await b.locator('#join').click();
     await expect(a.locator('#applicationPanel h2')).toHaveText('有人来啦！！');
     await expect(a.locator('#applicantName')).toHaveText('狗狗想加入你的房间👀请确认是对方本人哦！');
     await a.locator('#approve').click();
     await expect(b.locator('#selfPlayer')).toContainText('狗狗');
+    await expect(b.locator('#pendingPanel')).toBeHidden();
+    await expect(b.locator('#asideTurn > #turnBar')).toBeVisible();
   } finally {await finish(contexts);}
 });
 

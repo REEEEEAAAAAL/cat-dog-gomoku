@@ -4,7 +4,7 @@ import { isChatSnapshot } from './chat-protocol';
 
 export type Phase = 'waiting' | 'running' | 'paused' | 'finished' | 'closed';
 export type Action = 'create' | 'apply' | 'connect' | 'snapshot' | 'sync' | 'approve' | 'reject' | 'ready' | 'move' | 'rematch' | 'leave'
-  | 'resign' | 'undo_request' | 'undo_respond' | 'undo_cancel' | 'emoji' | 'withdraw' | 'preview';
+  | 'resign' | 'iamking' | 'undo_request' | 'undo_respond' | 'undo_cancel' | 'emoji' | 'withdraw' | 'preview';
 export interface InvitationInfo { preview: true; room: string; code: string; animal: 'cat' | 'dog' }
 export function isInvitationInfo(value: unknown): value is InvitationInfo {
   return typeof value === 'object' && value !== null && 'preview' in value && value.preview === true
@@ -15,7 +15,7 @@ export const reactions = { cat: '😼', dog: '🐶', heart: '❤️', plead: '�
 export type Reaction = keyof typeof reactions;
 export interface ReactionEvent { id: string; seat: Seat; emoji: Reaction; at: number }
 export interface UndoRequest { id: string; seat: Seat; target: string; removeCount: 1 | 2; restoreMs: number; expiresAt: number }
-export interface Player { name: string; animal: 'dog' | 'cat'; ready: boolean; online: boolean; synced: boolean; undoLeft: number }
+export interface Player { name: string; animal: 'dog' | 'cat'; ready: boolean; online: boolean; synced: boolean; undoLeft: number; undoUsed?: number }
 export interface Pending { pending: true; room: string; code: string; serverNow: number; applicationId: string | null; withdrawn?: boolean }
 // seat 表示固定席位，blackSeat 表示本局执黑席位；再来一局只交换棋色。
 export interface Snapshot {
@@ -70,7 +70,10 @@ const point = (value: unknown): value is Point => object(value) && number(value.
   && Number.isInteger(value.x) && Number.isInteger(value.y) && value.x >= 0 && value.x < 15 && value.y >= 0 && value.y < 15;
 const player = (value: unknown): value is Player => object(value) && typeof value.name === 'string'
   && (value.animal === 'cat' || value.animal === 'dog') && typeof value.ready === 'boolean'
-  && typeof value.online === 'boolean' && typeof value.synced === 'boolean' && number(value.undoLeft) && value.undoLeft >= 0 && value.undoLeft <= 2;
+  && typeof value.online === 'boolean' && typeof value.synced === 'boolean'
+  && number(value.undoLeft) && value.undoLeft >= 0 && Number.isSafeInteger(value.undoLeft)
+  && value.undoLeft <= 2
+  && (value.undoUsed === undefined || (number(value.undoUsed) && value.undoUsed >= 0 && Number.isSafeInteger(value.undoUsed)));
 
 /** 校验 RPC 外部数据后再交给渲染和状态机，待审批回包与入座快照分别检查。 */
 export function isReply(value: unknown): value is Reply {
@@ -112,7 +115,7 @@ const messages: Record<string, string> = {
   room_closed: '房间已关闭，请创建新房间', create_limit: '创建太频繁，请稍后重试或继续已有房间',
   invalid_position: '请选择棋盘上的空交叉点', wrong_phase: '当前状态无法执行此操作',
   application_changed: '加入申请已变化，请核对后重试', protocol_mismatch: '网页版本已更新，请刷新',
-  undo_limit: '本局两次悔棋机会已用完', no_undo_move: '你还没有落子，暂时不能悔棋',
+  undo_limit: '本局悔棋机会已用完', no_undo_move: '你还没有落子，暂时不能悔棋',
   undo_target_changed: '最近棋步已变化，请重新核对悔棋范围', undo_already_requested: '你本轮申请过但是失败了，下次再试试吧~',
   undo_cooldown: '请等上次申请满 30 秒后再试', undo_expired: '悔棋申请已结束或过期',
   invalid_emoji: '请选择提供的表情', emoji_rate_limit: '表情发得太快啦，稍等一下',

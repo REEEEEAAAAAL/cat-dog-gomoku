@@ -2,13 +2,15 @@ import './chat.css';
 import { sendChat } from './api';
 import { chatLength, validChatText } from './chat-protocol';
 import type { ChatSnapshot } from './chat-protocol';
-import type { Snapshot } from './protocol';
-import { RpcError } from './protocol';
+import type { Command, Reply, Snapshot } from './protocol';
+import { errorMessage, RpcError } from './protocol';
 import { createId } from './rules';
 
-interface Outgoing { id: string; text: string }
+interface Outgoing { id: string; text: string; bonus?: { gameId: string; version: number }; undoFull?: true }
+const bonusNotice = '皇帝驾到！本局悔棋机会 +1 👑';
+const undoFullNotice = '你已经有2次悔棋机会啦！先用掉它们~';
 
-/** 独立管理聊天发送与阅读；不占用前端游戏操作的 busy 状态，也不修改棋局版本。 */
+/** 普通消息独立收发；悔棋口令先由游戏命令核对额度，满额时作为普通消息发送。 */
 export class RoomChat {
   private readonly toggle = document.getElementById('chatToggle') as HTMLButtonElement;
   private readonly panel = document.getElementById('chatPanel')!;
@@ -33,7 +35,8 @@ export class RoomChat {
   private failedReads = 0;
   private inputFocusScrollY: number | null = null;
 
-  constructor(private readonly client: string) {
+  constructor(private readonly client: string, private readonly exchange: (request: Command) => Promise<Reply | null>,
+    private readonly onUndoCredit: () => void) {
     this.toggle.onclick = () => this.open(!!this.panel.hidden);
     document.getElementById('negotiationChatToggle')!.onclick = () => this.open(true);
     document.getElementById('chatClose')!.onclick = () => this.open(false);
@@ -117,7 +120,20 @@ export class RoomChat {
       const saved: unknown = JSON.parse(sessionStorage.getItem(this.key('outgoing')) || 'null');
       if (saved && typeof saved === 'object' && 'id' in saved && typeof saved.id === 'string'
         && 'text' in saved && typeof saved.text === 'string' && validChatText(saved.text)) {
-        this.outgoing = { id: saved.id, text: saved.text }; this.input.value = saved.text;
+        const outgoing: Outgoing = { id: saved.id, text: saved.text };
+        if ('bonus' in saved) {
+          const bonus = saved.bonus;
+          if (!bonus || typeof bonus !== 'object' || !('gameId' in bonus) || typeof bonus.gameId !== 'string'
+            || !('version' in bonus) || typeof bonus.version !== 'number' || !Number.isSafeInteger(bonus.version)
+            || saved.text !== 'iamking') throw new Error('Invalid saved bonus');
+          outgoing.bonus = { gameId: bonus.gameId, version: bonus.version };
+        }
+        if ('undoFull' in saved) {
+          if (saved.undoFull !== true || saved.text !== 'iamking' || outgoing.bonus) throw new Error('Invalid saved full undo message');
+          outgoing.undoFull = true;
+        }
+        this.outgoing = outgoing;
+        this.input.value = saved.text;
         this.status.textContent = '上次发送尚未确认，请重试核对。';
       }
     } catch { this.status.textContent = '无法恢复上次待发送记录，请先核对消息。'; }
@@ -187,7 +203,8 @@ export class RoomChat {
     const followLatest = bottom || !!confirmed;
     this.data = data;
     if (confirmed) {
-      this.outgoing = null; this.input.value = ''; this.status.textContent = ''; this.save();
+      this.status.textContent = this.outgoing?.undoFull ? undoFullNotice : '';
+      this.outgoing = null; this.input.value = ''; this.save();
     }
     if (changed) {
       this.list.replaceChildren();
@@ -227,8 +244,9 @@ export class RoomChat {
     this.send.textContent = this.sending ? '发送中…' : this.outgoing ? '重试发送' : '发送';
     document.getElementById('chatCount')!.textContent = `${chatLength(this.input.value)}/100 字`;
     const availability = document.getElementById('chatAvailability')!;
-    availability.classList.toggle('chat-error', !!this.status.textContent);
-    availability.textContent = this.status.textContent || (closed ? '房间已关闭，无法继续发送。'
+    const status = this.status.textContent;
+    availability.classList.toggle('chat-error', !!status && status !== bonusNotice && status !== undoFullNotice);
+    availability.textContent = status || (closed ? '房间已关闭，无法继续发送。'
       : !this.state?.chat ? '聊天暂不可用，请等待服务更新。'
       : !this.available ? '连接恢复后可发送，输入会保留。' : '仅保留最近 50 条 · Enter 发送，Shift+Enter 换行');
   }
@@ -237,10 +255,33 @@ export class RoomChat {
     if (this.send.disabled || this.composing || !this.state) return;
     const generation = this.generation;
     // 首次发送即固定 ID 和正文；回执丢失或刷新后重试必须沿用同一组数据。
-    this.outgoing ??= { id: createId(), text: this.input.value };
+    this.outgoing ??= { id: createId(), text: this.input.value, bonus: this.input.value === 'iamking'
+      ? { gameId: this.state.gameId, version: this.state.version } : undefined };
     const outgoing = this.outgoing;
     this.save(); this.sending = true; this.status.textContent = ''; this.renderControls();
     try {
+      if (outgoing.bonus) {
+        // 口令重试绑定最初的棋局和版本，刷新或换局后不会把旧奖励发到新局。
+        const reply = await this.exchange({ p_room: this.state.room, p_client: this.client, p_operation: outgoing.id,
+          p_action: 'iamking', p_game: outgoing.bonus.gameId, p_version: outgoing.bonus.version, p_protocol: 1, p_data: {} });
+        if (generation !== this.generation || !reply || reply.pending) return;
+        if (reply.rejection === 'undo_full') {
+          // 先保存普通消息及原编号，刷新或丢回执后只重试聊天，避免重新领取奖励。
+          this.outgoing = { id: outgoing.id, text: outgoing.text, undoFull: true };
+          this.save();
+        } else {
+          this.outgoing = null;
+          if (reply.accepted) this.input.value = '';
+          const credited = reply.accepted && reply.gameId === outgoing.bonus.gameId;
+          if (credited) this.status.textContent = bonusNotice;
+          else if (reply.accepted) this.status.textContent = '上一局的悔棋奖励已确认。';
+          else this.status.textContent = errorMessage(reply.rejection ?? '');
+          this.save();
+          // 只在本页首次确认这笔奖励时提示，双方的轮询与刷新都不会重播。
+          if (credited) this.onUndoCredit();
+          return;
+        }
+      }
       const result = await sendChat({ p_room: this.state.room, p_client: this.client, p_operation: outgoing.id, p_text: outgoing.text });
       if (generation !== this.generation) return;
       this.receive(result);

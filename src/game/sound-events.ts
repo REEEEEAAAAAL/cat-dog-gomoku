@@ -35,7 +35,12 @@ export class SoundEvents {
       && next.offlineDeadline === null && previous.players.every(player => player.online && player.synced)
       && next.players.every(player => player.online && player.synced)) sounds.push('start');
     if (sameGame && audible) {
-      if (next.players.some((player, index) => player.undoLeft < previous.players[index].undoLeft)) sounds.push('undo');
+      // 两次轮询间可能既领奖又悔棋；按实际获批次数识别音效，旧服务端仍按余额变化判断。
+      if (next.players.some((player, index) => {
+        const prior = previous.players[index];
+        return player.undoUsed !== undefined && prior.undoUsed !== undefined
+          ? player.undoUsed > prior.undoUsed : player.undoLeft < prior.undoLeft;
+      })) sounds.push('undo');
       sounds.push(...added.map(() => 'move' as const));
       if (!this.ended && next.phase === 'finished' && next.winner !== null) {
         sounds.push(next.winner === next.seat ? 'win' : 'lose');

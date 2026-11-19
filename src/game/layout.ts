@@ -7,7 +7,7 @@ export function setupRoomLayout() {
   // 移动同一批节点以保留事件和控件状态；注释锚点记录原位，切回手机布局时按原序复位。
   const origins = new Map<HTMLElement, Comment>();
   const movable = ['turnBar', 'opponentPlayer', 'selfPlayer', 'interactionControls',
-    'moveControls', 'undoPanel', 'rematchPanel', 'applicationPanel',
+    'moveControls', 'undoPanel', 'rematchPanel', 'pendingPanel', 'applicationPanel',
     'lobbyPanel', 'invitePanel', 'rules', 'roomCompanions', 'chatToggle', 'connectionBar', 'leave', 'closeRoom', 'tabletFooter'];
   for (const id of movable) {
     const node = element(id);
@@ -43,6 +43,8 @@ export function setupRoomLayout() {
       element('desktopActions').hidden = mode !== 'wide';
       if (mode === 'wide') {
         move('turnBar', 'asideTurn');
+        // 申请者尚未收到棋局快照，等待提示接替右栏顶部的回合状态。
+        move('pendingPanel', 'asideTurn');
         for (const id of ['opponentPlayer', 'selfPlayer']) move(id, 'asidePlayers');
         for (const id of ['rematchPanel', 'applicationPanel', 'lobbyPanel', 'invitePanel']) move(id, 'asideActivity');
         move('undoPanel', 'negotiationDialog');

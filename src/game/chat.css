@@ -6,7 +6,8 @@
 #room:not([data-layout="wide"]) #chatToggle{align-self:flex-end}
 #room[data-layout="phone"] #selfPlayer .player{padding-right:10px}
 #room[data-layout="phone"] #chatToggle{min-width:64px;margin-left:auto;align-self:center;flex-shrink:0}
-#room[data-layout="phone"] #selectionHint{flex:1;justify-content:flex-end;padding-right:8px}
+/* 提示占满操作行剩余空间，文字从棋盘左边沿内缩 5px；按钮仍靠右排列。 */
+#room[data-layout="phone"] #selectionHint{flex:1;justify-content:flex-start;padding-left:5px;padding-right:0;text-align:left}
 #negotiationChatToggle{min-height:44px;font-size:12px;margin-top:8px}
 #room[data-layout="phone"] #negotiationChatToggle{display:none}
 .chat-panel .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}

@@ -29,7 +29,6 @@
 .shell:has(#room:not([hidden]):not([data-layout="phone"])) .masthead { min-height: 70px; }
 #room:not([data-layout="phone"]) { padding: 16px 0; gap: 24px; align-items: start; }
 #room:not([data-layout="phone"]) .room-heading { margin: 0 0 var(--heading-gap); height: var(--heading-height); }
-#room:not([data-layout="phone"]) .room-heading .eyebrow { display: none; }
 #room:not([data-layout="phone"]) .room-heading h1 { font-size: 18px; margin: 0; }
 .shell:has(#room:not([hidden]):not([data-layout="phone"])) .sound-toggle { margin-right: -13px; }
 #room:not([data-layout="phone"]) .self-player, #room:not([data-layout="phone"]) .self-row { margin: 0; }
@@ -64,6 +63,7 @@
 #room[data-layout="wide"] .room-aside > #leave { margin-top: -3px; }
 #room[data-layout="wide"] #asideCore { height: calc(var(--board-size) + var(--heading-height) + var(--heading-gap) + var(--board-shadow)); display: flex; flex-direction: column; gap: var(--aside-gap); }
 #room[data-layout="wide"] #asideTurn { flex-shrink: 0; }
+#room[data-layout="wide"] #pendingPanel h2 { font-size: 18px; }
 #room[data-layout="wide"] .turn-bar { margin: 0; }
 #room[data-layout="wide"] .turn-bar > div { min-width: 0; overflow-wrap: anywhere; }
 #room[data-layout="wide"] #asidePlayers { display: grid; gap: 8px; flex-shrink: 0; }

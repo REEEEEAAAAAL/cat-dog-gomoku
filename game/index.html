@@ -14,19 +14,44 @@
       <header class="masthead"><a href="./" class="brand"><span class="brand-mark" aria-hidden="true"><span></span></span><span>猫狗五子棋<small>CAT & DOG GOMOKU</small></span></a><button id="sound" class="sound-toggle" type="button" aria-label="关闭声音" aria-pressed="true" title="关闭声音"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4Z"/><g class="sound-waves"><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></g><path class="sound-muted" d="m16 9 5 6m0-6-5 6"/></svg></button></header>
       <main>
         <section id="home" class="home">
-          <div class="intro"><span class="eyebrow">OUR LITTLE GAME</span><h1>距离再远，<br>也能一起下棋。</h1><p>选一个身份，邀请另一个人。<br>不需要注册，连成五颗就算赢！</p><div class="intro-art" id="introArt" aria-hidden="true"></div><span class="intro-caption">黑棋先手 · 每步 60 秒 · 每局交换黑白</span></div>
-          <div class="entry-panel" id="entryPanel"><h2 id="entryTitle">哈喽，你是谁？</h2><p id="invitationRole" role="status" hidden></p><div id="identityPicker" class="identity-picker" role="group" aria-label="选择身份"><button id="cat" type="button" aria-pressed="true"></button><button id="dog" type="button" aria-pressed="false"></button></div>
-            <label for="nickname">你的昵称</label><input id="nickname" maxlength="24" placeholder="猫猫" autocomplete="nickname" />
+          <div class="intro">
+            <h1>距离再远，<br><span>也能一起下棋！</span></h1>
+            <p>选一个身份，邀请另一个人。<br>不需要注册，连成五颗就算赢~</p>
+            <div class="intro-art" id="introArt" aria-hidden="true">
+              <div class="sample-board"></div>
+            </div>
+            <p class="intro-caption"><span>黑棋先手</span><span>每步 60 秒</span><span>每局交换黑白</span></p>
+          </div>
+          <div class="entry-panel" id="entryPanel">
+            <h2 id="entryTitle">哈喽，你是谁？</h2>
+            <p id="invitationRole" role="status" hidden></p>
+            <div id="identityPicker" class="identity-picker" role="group" aria-label="选择身份">
+              <button id="cat" type="button" aria-pressed="true"></button>
+              <button id="dog" type="button" aria-pressed="false"></button>
+            </div>
+            <label for="nickname">你的昵称 <small>选填</small></label>
+            <input id="nickname" maxlength="24" placeholder="猫猫" autocomplete="nickname" />
             <button id="create" class="primary wide" disabled>创建房间</button>
-            <div id="joinEntry"><h3 id="joinTitle" hidden>加入TA的房间</h3><button id="retryInvitation" type="button" hidden>重新确认角色</button><div class="or"><span>或加入对方的房间</span></div>
-            <form id="joinForm"><label for="roomInput">房间码</label><div class="join-row"><input id="roomInput" maxlength="36" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="输入 10 位房间码" /><button id="join" type="submit" disabled>加入</button></div></form></div>
+            <div id="joinEntry">
+              <h3 id="joinTitle" hidden>加入TA的房间</h3>
+              <button id="retryInvitation" type="button" hidden>重新确认角色</button>
+              <div class="or"><span>或加入对方的房间</span></div>
+              <form id="joinForm">
+                <label for="roomInput">房间码</label>
+                <div class="join-row">
+                  <input id="roomInput" maxlength="36" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="输入 10 位房间码" />
+                  <button id="join" type="submit" disabled>加入</button>
+                </div>
+                <p id="roomError" class="field-error" hidden>请输入邀请中的 10 位房间码。</p>
+              </form>
+            </div>
             <button id="resume" class="text-button wide" hidden>继续上次对局</button>
             <p class="entry-hint">邀请链接仅供两人使用，加入后由房主确认。</p>
           </div>
         </section>
         <!-- 房间内 ID 是 main.ts 与 layout.ts 的节点契约，切换布局时迁移现有控件。 -->
         <section id="room" class="room-layout" hidden>
-          <div class="play-area" id="playArea"><div class="room-heading" id="roomHeading"><div><span class="eyebrow">JUST THE TWO OF US</span><h1>当前对局 <span id="round">01</span></h1></div><div class="room-tag">房间 <strong id="roomCode"></strong></div></div>
+          <div class="play-area" id="playArea"><div class="room-heading" id="roomHeading"><div><h1>当前对局 <span id="round">01</span></h1></div><div class="room-tag">房间 <strong id="roomCode"></strong></div></div>
             <div id="readySlot"></div>
             <div id="compactPlayers"></div>
             <div id="opponentPlayer" class="players"></div>
@@ -49,7 +74,7 @@
             <div id="applicationPanel" class="aside-block" hidden><h2>有人来啦！！</h2><p id="applicantName"></p><div class="button-row"><button id="approve" class="primary">确认加入</button><button id="reject">拒绝</button></div></div>
             <div id="lobbySlot"><div id="lobbyPanel" class="aside-block"><h2 id="lobbyTitle">等另一个人来ing...</h2><p id="lobbyText">把邀请链接发给对方，房主确认后，双方准备就能开局。</p><p id="readyNotice" class="ready-notice" role="status" aria-live="polite" hidden>对方准备好了哦~</p><button id="ready" class="primary wide" disabled>准备好啦！</button><button id="rematch" class="primary wide" hidden>再来一局</button><button id="homeReturn" class="primary wide" hidden>返回首页</button></div></div>
             <div id="invitePanel" class="aside-block"><h2>邀请TA一起下棋吧~</h2><p>复制链接发给对方，也可以直接分享房间码。</p><div class="copy-actions"><button id="invite" aria-live="polite">复制邀请链接</button><button id="copyCode" aria-live="polite">复制房间码</button></div><p id="copyStatus" class="copy-status" role="status" aria-live="polite"></p><textarea id="copyFallback" rows="3" readonly aria-label="邀请链接，长按复制" hidden></textarea></div>
-            <details id="rules" class="rules-block" open><summary>对局规则</summary><p>黑棋先手，横竖斜连成五颗就赢！无禁手~</p><p>每步 60 秒，行棋超时会判负；一方断线后暂停，超过 5 分钟未恢复则对局中止，不计输赢。</p><p>先点选你想选的地方预览一下，想好了再确认落子哦！</p></details>
+            <details id="rules" class="rules-block" open><summary>对局规则</summary><p>黑棋先手，横竖斜连成五颗就赢！无禁手~</p><p>每步 60 秒，行棋超时会判负；一方断线后暂停，超过 5 分钟未恢复则对局中止，不计输赢。</p><p>先点选预览，再确认落子。棋子上的小圆点标出上一手。</p></details>
             <button id="leave" class="text-button leave">离开房间</button>
             <button id="closeRoom" class="text-button leave">关闭房间</button>
             <div class="room-companions" id="roomCompanions" aria-hidden="true"><img src="./companions.svg" alt="" width="340" height="220" draggable="false" /></div>

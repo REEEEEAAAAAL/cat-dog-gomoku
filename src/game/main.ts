@@ -1,4 +1,5 @@
 import './style.css';
+import './home.css';
 import './room-layout.css';
 import { setupRoomLayout } from './layout';
 import { avatar } from './avatars';
@@ -34,7 +35,7 @@ const updateRoomLayout = setupRoomLayout();
 if (typeof CSS !== 'undefined' && typeof CSS.registerProperty === 'function') document.documentElement.classList.add('smooth-turn');
 // 每次加载生成控制页 ID；同一访客的新页接管席位后，旧页的请求会被服务端拒绝。
 const client = createId();
-const chat = new RoomChat(client);
+const chat = new RoomChat(client, exchange, () => audio.playUndoCredit());
 const roomPattern = /^(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[a-f0-9]{10})$/i;
 let storedRoom = localStorage.getItem('gomoku.room') || '';
 const invitation = location.hash.slice(1);
@@ -273,6 +274,7 @@ function render() {
   el('room').hidden = !room;
   const s = snapshot;
   document.querySelector<HTMLElement>('.play-area')!.hidden = pending || !s;
+  el('turnBar').hidden = !s;
   el('pendingPanel').hidden = !pending;
   el('lobbyPanel').hidden = !s || s.phase === 'running' || s.phase === 'paused';
   el('invitePanel').hidden = !s || s.phase === 'closed' || (connected && s.players.every(p => p.name && p.online));
@@ -562,7 +564,8 @@ const svgLines = Array.from({ length: 15 }, (_, i) => `<path d="M.5 ${i + .5}H14
 el('boardLines').innerHTML = `<g stroke="#91794f" stroke-width=".025">${svgLines}</g>${[[3, 3], [11, 3], [7, 7], [3, 11], [11, 11]].map(([x, y]) => `<circle cx="${x + .5}" cy="${y + .5}" r=".07" fill="#91794f"/>`).join('')}`;
 el('dog').innerHTML = `${avatar('dog')}<span>狗狗</span>`;
 el('cat').innerHTML = `${avatar('cat')}<span>猫猫</span>`;
-el('introArt').innerHTML = avatar('cat') + avatar('dog');
+el('introArt').insertAdjacentHTML('afterbegin', avatar('cat'));
+el('introArt').insertAdjacentHTML('beforeend', avatar('dog'));
 for (const value of ['dog', 'cat'] as const) button(value).onclick = () => {
   if (invited && invitationInfo?.animal !== value) return;
   void audio.animal(value);
@@ -571,6 +574,7 @@ for (const value of ['dog', 'cat'] as const) button(value).onclick = () => {
 };
 function setInvitationMode(active: boolean) {
   invited = active; invitationInfo = null;
+  notice(active ? '已打开房间邀请。' : '选一个身份，开一局吧！');
   const entry = el('joinEntry');
   el('entryPanel').insertBefore(entry, active ? button('create') : button('create').nextSibling);
   el('entryTitle').textContent = active ? '对方在等你，一起入座' : '今天，你是谁？';
@@ -584,11 +588,18 @@ async function loadInvitation() {
   // 预览期间可能已换房或改码，旧结果不能覆盖当前邀请的角色。
   if (!invited || epoch !== active || target !== input('roomInput').value.trim()) return;
   invitationInfo = info; animal = info.animal;
+  // 链接可携带完整房间 ID，预览成功后展示可口述的短码，加入仍使用已确认的房间。
+  input('roomInput').value = info.code;
   input('nickname').placeholder = animal === 'cat' ? '猫猫' : '狗狗';
   button('dog').setAttribute('aria-pressed', String(animal === 'dog'));
   button('cat').setAttribute('aria-pressed', String(animal === 'cat')); render();
 }
-input('roomInput').addEventListener('input', () => { if (invited) { invitationInfo = null; render(); } });
+input('roomInput').addEventListener('input', () => {
+  input('roomInput').removeAttribute('aria-describedby');
+  input('roomInput').removeAttribute('aria-invalid');
+  el('roomError').hidden = true;
+  if (invited) { invitationInfo = null; render(); }
+});
 input('roomInput').addEventListener('change', () => { if (invited && roomPattern.test(input('roomInput').value.trim())) void run(loadInvitation); });
 button('retryInvitation').onclick = () => { void run(loadInvitation); };
 button('create').onclick = () => {
@@ -597,9 +608,15 @@ button('create').onclick = () => {
 };
 el('joinForm').onsubmit = event => {
   event.preventDefault(); const target = input('roomInput').value.trim();
-  if (!roomPattern.test(target)) { notice('请输入 10 位房间码，或打开对方的邀请链接', true); return; }
+  if (!roomPattern.test(target)) {
+    el('roomError').hidden = false;
+    input('roomInput').setAttribute('aria-invalid', 'true');
+    input('roomInput').setAttribute('aria-describedby', 'roomError');
+    input('roomInput').focus();
+    return;
+  }
   if (invited && !invitationInfo) { feedback('请先等房间角色确认完成，再加入。', true); return; }
-  void run(() => connect('apply', target));
+  void run(() => connect('apply', invitationInfo?.room ?? target));
 };
 button('resume').onclick = () => { void run(() => connect('connect', storedRoom)); };
 button('reconnect').onclick = () => { void run(async () => {

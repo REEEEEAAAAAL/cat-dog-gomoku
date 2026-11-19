@@ -65,6 +65,8 @@ beforeAll(async () => {
   await db.exec(resign.replaceAll('clock_timestamp()', 'public.test_now()'));
   const chat = await readFile('cloudbase/migrations/20261028010000_text_chat.sql', 'utf8');
   await db.exec(chat.replaceAll('clock_timestamp()', 'public.test_now()'));
+  const bonus = await readFile('cloudbase/migrations/20261119010000_undo_bonus.sql', 'utf8');
+  await db.exec(bonus.replaceAll('clock_timestamp()', 'public.test_now()'));
 });
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
@@ -437,7 +439,7 @@ describe('game RPC on isolated PostgreSQL with controlled server clock', () => {
     expect(current.undoRequest?.target).not.toBe(request.target);
     expect(current.undoDenied).toBeNull();
   });
-  it('undo is limited to two successes and enforces a thirty-second request cooldown', async () => {
+  it('requires a new credit after two approved undos and keeps the request cooldown', async () => {
     const first = await moveFirst(); let request = await requestUndo();
     await as((3 - first) as Seat); await call('snapshot'); await call('undo_respond', { request: request.id, accept: true });
     await as(first); await call('snapshot'); await call('move', { x: 6, y: 6 }); await requestUndo();
@@ -446,6 +448,37 @@ describe('game RPC on isolated PostgreSQL with controlled server clock', () => {
     await as((3 - first) as Seat); await call('snapshot'); await call('undo_respond', { request: request.id, accept: true });
     await as(first); await call('snapshot'); await call('move', { x: 5, y: 5 }); await requestUndo();
     expect(current.rejection).toBe('undo_limit'); expect(current.players[first - 1].undoLeft).toBe(0);
+    await call('iamking'); expect(current.players[first - 1].undoLeft).toBe(1);
+    await requestUndo(); expect(current.rejection).toBe('undo_cooldown');
+    await alive(60000); request = await requestUndo();
+    expect(request.seat).toBe(first);
+    await as((3 - first) as Seat); await call('snapshot'); await call('undo_respond', { request: request.id, accept: true });
+    expect(current.accepted).toBe(true); expect(current.players[first - 1].undoLeft).toBe(0);
+  });
+  it('keeps bonus credits per seat and round, with private, retryable acknowledgements', async () => {
+    const version = current.version;
+    await as(2); await expect(call('iamking')).rejects.toThrow('forbidden');
+    await as(1); await call('iamking');
+    expect(current).toMatchObject({ accepted: false, rejection: 'undo_full', version });
+    const first = await moveFirst(), request = await requestUndo();
+    await as((3 - first) as Seat); await call('snapshot');
+    await call('undo_respond', { request: request.id, accept: true });
+    await as(first); await call('snapshot');
+    const firstGrant = { operation: crypto.randomUUID(), game: current.gameId, version: current.version };
+    const deadline = current.turnDeadline;
+    await call('iamking', {}, firstGrant);
+    expect(isReply(current)).toBe(true);
+    expect(current.accepted).toBe(true);
+    expect(current.players.map(p => p.undoLeft)).toEqual([2, 2]);
+    await call('iamking', {}, firstGrant); expect(current.duplicate).toBe(true);
+    await call('iamking'); expect(current.rejection).toBe('undo_full');
+    expect(current.version).toBe(firstGrant.version + 1);
+    expect(current.turnDeadline).toBe(deadline);
+    expect(current.chat).toMatchObject({ revision: 0, messages: [] });
+    await call('resign'); await call('iamking'); expect(current.rejection).toBe('wrong_phase');
+    await call('rematch'); await as((3 - first) as Seat); await call('snapshot'); await call('rematch');
+    await as(first); await call('iamking', {}, firstGrant); expect(current.duplicate).toBe(true);
+    expect(current.players.map(p => p.undoLeft)).toEqual([2, 2]);
   });
   it('blocks moves during negotiation and prevents self-approval or opponent cancellation', async () => {
     const first = await moveFirst(); const request = await requestUndo();
