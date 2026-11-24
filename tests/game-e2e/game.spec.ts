@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Browser, BrowserContext, Page } from '@playwright/test';
 import type { Snapshot } from '../../src/game/protocol';
+import { publicGameEntry } from '../../src/game/invitation';
 import { writeFile } from 'node:fs/promises';
 
 
@@ -57,12 +58,21 @@ async function pair(browser: Browser, mobile = false, bothDesktop = false, verif
   await expect(a.locator('#roomCode')).toHaveText(/^[A-F0-9]{10}$/);
   await expect(a.locator('#invitePanel')).toBeVisible();
   if (verifyReadiness) {
+    const viewport = a.viewportSize()!;
+    if (mobile) {
+      await expect(a.locator('#hostWaitingSlot > #invitePanel')).toBeVisible();
+      const invite = (await a.locator('#invitePanel').boundingBox())!;
+      const opponent = (await a.locator('#opponentPlayer').boundingBox())!;
+      expect(invite.y + invite.height).toBeLessThan(opponent.y);
+      await a.screenshot({ path: 'test-results/screenshots/game-host-invite-mobile.png', fullPage: true });
+    }
     for (const width of [900, 1024, 1280]) {
       await resizeRoom(a, {width,height:1000});
       const lobby = await a.locator('#lobbyPanel').boundingBox(), title = await a.locator('#invitePanel h2').boundingBox();
       expect(title!.y - lobby!.y - lobby!.height).toBeGreaterThanOrEqual(0);
       expect(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
+    if (mobile) await resizeRoom(a, viewport);
   }
   await enter(b, `./${new URL(a.url()).hash}`);
   await expect(b.locator('#dog')).toBeVisible();
@@ -74,6 +84,16 @@ async function pair(browser: Browser, mobile = false, bothDesktop = false, verif
   await b.locator('#join').click();
   await expect(b.locator('#pendingPanel')).toBeVisible();
   await expect(a.locator('#applicationPanel')).toBeVisible();
+  if (verifyReadiness && mobile) {
+    await expect(a.locator('#hostWaitingSlot > #applicationPanel')).toBeVisible();
+    await expect(a.locator('#hostWaitingSlot > #invitePanel')).toBeVisible();
+    const request = (await a.locator('#applicationPanel').boundingBox())!;
+    const invite = (await a.locator('#invitePanel').boundingBox())!;
+    const opponent = (await a.locator('#opponentPlayer').boundingBox())!;
+    expect(request.y + request.height).toBeLessThan(invite.y);
+    expect(invite.y + invite.height).toBeLessThan(opponent.y);
+    await a.screenshot({ path: 'test-results/screenshots/game-host-application-mobile.png', fullPage: true });
+  }
   await a.locator('#approve').click();
   await expect(b.locator('#ready')).toBeEnabled();
   await expect(a.locator('#ready')).toHaveText('准备好啦！');
@@ -98,6 +118,10 @@ async function pair(browser: Browser, mobile = false, bothDesktop = false, verif
     await expect(a.locator('#ready')).toHaveText('准备好啦！正在等待对方');
     await expect(a.locator('#ready')).toBeDisabled();
     await expect(a.locator('#readyNotice')).toBeHidden();
+    if (mobile) {
+      await expect(a.locator('#hostWaitingSlot > #invitePanel')).toHaveCount(1);
+      await expect(b.locator('#roomAside > #invitePanel')).toHaveCount(1);
+    }
   }
   await b.locator('#ready').click();
   await expect(a.locator('#gameStatus')).toContainText(/的回合|你的回合/);
@@ -109,10 +133,14 @@ async function pair(browser: Browser, mobile = false, bothDesktop = false, verif
   return { contexts, a, b, errors, snapshots, state: () => state! };
 }
 
-test('ready notification survives refresh and mobile ready action stays above the board', async ({ browser }) => {
+test('mobile host invitations stay above the opponent until both players are ready', async ({ browser }) => {
   test.skip(!process.env.GOMOKU_URL && !process.env.GOMOKU_LIVE_LOCAL && !process.env.GOMOKU_LOCAL_SQL);
-  const game = await pair(browser, false, false, true);
+  const game = await pair(browser, true, false, true);
   try {
+    for (const id of ['invitePanel', 'applicationPanel']) {
+      await expect(game.a.locator(`#roomAside > #${id}`)).toHaveCount(1);
+    }
+    await expect(game.a.locator('#hostWaitingSlot')).toBeEmpty();
     for (const page of [game.a, game.b]) {
       await expect(page.locator('#readyNotice')).toBeHidden();
       await expect(page.locator('#ready')).toBeHidden();
@@ -190,16 +218,30 @@ test('home supports narrow phones and desktop without overflow', async ({ page }
   expect(favicon.ok()).toBe(true);
   expect(favicon.headers()['content-type']).toContain('image/svg+xml');
   expect(await favicon.text()).toContain('viewBox="0 0 36 36"');
-  for (const width of [320, 360, 390, 430, 900, 1024, 1280]) {
-    await resizeRoom(page, { width, height: 844 });
-    const statusSpacing = await page.locator('#connectionBar').evaluate(row => {
-      const text = row.querySelector('#notice')!.getBoundingClientRect();
-      const footer = document.querySelector('footer')!;
-      return { border: getComputedStyle(footer).borderTopWidth, gap: footer.getBoundingClientRect().top - text.bottom };
+  for (const width of [320, 360, 390, 430, 760, 820, 900, 1024, 1280]) {
+    await resizeRoom(page, { width, height: width === 820 ? 1180 : 844 });
+    const statusSpacing = await page.locator('#entryPanel > #connectionBar').evaluate(row => {
+      const status = row.getBoundingClientRect();
+      const card = row.parentElement!.getBoundingClientRect();
+      const join = row.parentElement!.querySelector('.join-row')!.getBoundingClientRect();
+      const footer = document.querySelector('footer')!.getBoundingClientRect();
+      const intro = document.querySelector('.intro')!.getBoundingClientRect();
+      const header = document.querySelector('.masthead')!.getBoundingClientRect();
+      const verticalGapDifference = (box: DOMRect) => Math.abs((box.top - header.bottom) - (footer.top - box.bottom));
+      return { offset: status.left - join.left, gap: status.top - join.bottom,
+        bottomPadding: card.bottom - status.bottom, footerGap: footer.top - card.bottom,
+        horizontalCenterError: Math.abs(intro.left + card.right - document.documentElement.clientWidth) / 2,
+        introGapDifference: verticalGapDifference(intro), cardGapDifference: verticalGapDifference(card) };
     });
-    expect(statusSpacing.border).toBe('1px');
-    expect(statusSpacing.gap).toBeGreaterThanOrEqual(8);
-    expect(statusSpacing.gap).toBeLessThanOrEqual(12);
+    expect(statusSpacing.offset).toBe(0);
+    expect(statusSpacing.gap).toBe(14);
+    expect(statusSpacing.bottomPadding).toBeGreaterThanOrEqual(16);
+    expect(statusSpacing.footerGap).toBeGreaterThanOrEqual(24);
+    expect(statusSpacing.horizontalCenterError).toBeLessThan(1);
+    if (width > 760) {
+      expect(statusSpacing.introGapDifference).toBeLessThan(1);
+      expect(statusSpacing.cardGapDifference).toBeLessThan(1);
+    }
     const cat = await page.locator('#cat').boundingBox(), dog = await page.locator('#dog').boundingBox();
     expect(cat!.x).toBeLessThan(dog!.x);
     expect(await page.locator('#introArt .avatar').first().evaluate(node => node.outerHTML)).toBe(await page.locator('#cat .avatar').evaluate(node => node.outerHTML));
@@ -557,7 +599,7 @@ test('invalid rooms stop requesting and withdrawn or rejected applications stay 
   for (const p of [a, b]) p.on('pageerror', error => errors.push(error.message));
   try {
     await enter(b); await b.locator('#roomInput').fill(crypto.randomUUID()); await b.locator('#join').click();
-    await expect(b.locator('#notice')).toContainText('没有找到房间');
+    await expect(b.locator('#entryPanel #notice')).toContainText('没有找到房间');
     await expect(b.locator('#home')).toBeVisible();
     let requests = 0;
     b.on('request', request => { if (request.url().endsWith('/rpc/gomoku_command')) requests++; });
@@ -617,14 +659,21 @@ test('clipboard success is explicit, restores labels and handles unavailable cli
   }
   const [a,b] = await Promise.all(contexts.map(context => context.newPage()));
   try {
+    await enter(a, './?inviteTest=a&inviteTest=b');
+    await enter(b);
     for (const page of [a,b]) {
-      await enter(page); await page.locator('#create').click();
+      await page.locator('#create').click();
       await expect(page.locator('#invitePanel')).toBeVisible();
     }
     await a.evaluate(() => { Object.defineProperty(navigator, 'clipboard', { configurable:true, value:{ writeText: async (value: string) => { sessionStorage.setItem('copied-value',value); } } }); });
     await a.locator('#invite').click();
     await expect(a.locator('#invite')).toHaveText('邀请链接复制成功！');
-    expect(await a.evaluate(() => sessionStorage.getItem('copied-value'))).toContain(await a.locator('#roomCode').textContent());
+    const current = new URL(a.url());
+    const local = ['localhost', '127.0.0.1', '[::1]'].includes(current.hostname);
+    const expected = new URL(local ? current : publicGameEntry);
+    expected.search = '?inviteTest=a&inviteTest=b';
+    expected.hash = (await a.locator('#roomCode').textContent())!;
+    expect(await a.evaluate(() => sessionStorage.getItem('copied-value'))).toBe(expected.href);
     await resizeRoom(a, {width:320,height:844});
     expect(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await a.locator('#copyCode').click(); await expect(a.locator('#copyCode')).toHaveText('房间码复制成功！');

@@ -2,11 +2,11 @@
 
 <p align="center">English | <a href="README.zh-CN.md">简体中文</a></p>
 
-<p align="center"><a href="https://ricky-d1gmj19kv6009dbce-1516945955.tcloudbaseapp.com/gomoku/">Play online</a> | <a href="#screenshots">Screenshots</a> | <a href="https://github.com/REEEEEAAAAAL/cat-dog-gomoku">Source code</a></p>
+<p align="center"><a href="https://cat-dog-gomoku.us.ci/">Play online</a> | <a href="#screenshots">Screenshots</a> | <a href="https://github.com/REEEEEAAAAAL/cat-dog-gomoku">Source code</a></p>
 
 A small online Gomoku game for two people. Pick a cat or dog, send an invitation, and play together on a 15×15 board. Built for phones, tablets, and desktops, with no account registration and a Simplified Chinese interface.
 
-The hosted game uses a CloudBase prepaid environment with limited validity and quotas. Its default domain may show a confirmation page before opening the game.
+The hosted game uses a CloudBase prepaid environment with limited validity and quotas. Its default domain may show a confirmation page before opening the game. <a href="https://ricky-d1gmj19kv6009dbce-1516945955.tcloudbaseapp.com/gomoku/">CloudBase fallback</a>
 
 ## Features
 
@@ -95,6 +95,8 @@ The CloudBase SDK may produce a Vite large-chunk advisory without failing the bu
 ## Deploy
 
 Use a CloudBase PostgreSQL environment and an authenticated CLI. Copy `.env.example` to `.env.local` and set the environment ID and its Publishable Key. Both the frontend build and `cloudbaserc.json` use `VITE_CLOUDBASE_ENV_ID` as the target. Enable static hosting and anonymous sign-in, then add the CloudBase-assigned hosting domain to the allowed domains. Verify the target and its billing settings before applying changes.
+
+Production invitations use the public game entry. For a separate deployment, set `VITE_GOMOKU_INVITE_URL` to its full game entry URL before building so invitations open rooms on that deployment. Local development and loopback previews use their current URL. The public entry sends a 302 to CloudBase, where the game and its requests run.
 
 ```powershell
 $targetEnv = node --env-file=.env.local -p "process.env.VITE_CLOUDBASE_ENV_ID ?? ''"

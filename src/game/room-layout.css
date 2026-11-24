@@ -10,6 +10,8 @@
 #asideActivity:not(:has(.aside-block, .replay-area, .rules-block)), #asideExtras:empty,
 #tabletNotices:empty { display: none; }
 #asideCore { display: contents; }
+#hostWaitingSlot > .aside-block { padding-block: 0 12px; margin-block-end: 12px; }
+#hostWaitingSlot h2 { margin-block-start: 0; }
 #closeRoom { display: block; margin-top: 8px; }
 #leave { color: var(--green); border-color: #a4bcb0; background: transparent; }
 #leave:hover:not(:disabled) { background: var(--paper); border-color: #88a796; }
@@ -208,3 +210,6 @@
 #room[data-layout="phone"] .action-cluster #cancel { grid-column: 1; }
 #room[data-layout="phone"] .action-cluster #undo { grid-column: 2; }
 #room[data-layout="phone"] .action-cluster #resign { grid-column: 1; }
+/* 只移动按钮本身，保留下方玩家卡片的原有位置。 */
+#room[data-layout="phone"] .action-cluster #undo,
+#room[data-layout="phone"] .action-cluster #resign { position: relative; top: 4px; }

@@ -244,7 +244,7 @@ test('portrait tablet keeps two action rows, scrollable reactions and an aligned
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   }
   state.phase='closed';await refresh();await page.locator('#homeReturn').click();
-  await expect(page.locator('#connectionBar')).toBeVisible();await expect(page.locator('#tabletFooter')).toBeHidden();
+  await expect(page.locator('#entryPanel > #connectionBar')).toBeVisible();await expect(page.locator('#tabletFooter')).toBeHidden();
 });
 
 // 使用文档坐标排除滚动偏移，比较状态切换前后右栏核心控件是否移动。

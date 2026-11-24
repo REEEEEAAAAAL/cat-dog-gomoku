@@ -12,6 +12,9 @@ import { GameAudio } from './audio';
 import { SoundEvents } from './sound-events';
 import { RoomChat } from './chat';
 import { setupReactionPicker } from './reaction-picker';
+import { invitationUrl } from './invitation';
+
+const inviteEntry = import.meta.env.VITE_GOMOKU_INVITE_URL as string | undefined;
 
 const el = (id: string) => document.getElementById(id)!;
 const button = (id: string) => el(id) as HTMLButtonElement;
@@ -92,7 +95,7 @@ function home() {
   resultKey = ''; dismissedResult = ''; replayStep = null; el('feedback').hidden = true;
   idlePaused = false;
   document.querySelectorAll<HTMLDialogElement>('dialog').forEach(dialog => dialog.close());
-  history.replaceState(null, '', location.pathname); el('copyFallback').hidden = true;
+  history.replaceState(null, '', location.pathname + location.search); el('copyFallback').hidden = true;
   el('entryTitle').textContent = 'Hello，你是谁？'; render();
 }
 
@@ -362,7 +365,7 @@ function render() {
   }
   el('selectionHint').textContent = selection ? `已选 ${String.fromCharCode(65 + selection.x)}${selection.y + 1}，确认后才落子` : '点选交叉点，再确认落子';
   renderReplay(); renderBoard(); renderClock();
-  updateRoomLayout(s.phase);
+  updateRoomLayout(s.phase, s.seat === 1);
   if (chatFocused) button('chatToggle').focus({ preventScroll: true });
 }
 
@@ -603,7 +606,7 @@ input('roomInput').addEventListener('input', () => {
 input('roomInput').addEventListener('change', () => { if (invited && roomPattern.test(input('roomInput').value.trim())) void run(loadInvitation); });
 button('retryInvitation').onclick = () => { void run(loadInvitation); };
 button('create').onclick = () => {
-  if (invited) { epoch++; setInvitationMode(false); history.replaceState(null, '', location.pathname); return; }
+  if (invited) { epoch++; setInvitationMode(false); history.replaceState(null, '', location.pathname + location.search); return; }
   void run(() => connect('create', createId()));
 };
 el('joinForm').onsubmit = event => {
@@ -725,7 +728,10 @@ async function copy(id: string, value: string, label: string, success: string) {
     copyTimers.set(id, window.setTimeout(() => { target.textContent = label; target.classList.remove('copied'); }, 5000));
   }
 }
-button('invite').onclick = () => { void copy('invite', `${location.origin}${location.pathname}#${snapshot?.code || room}`, '复制邀请链接', '邀请链接复制成功！'); };
+button('invite').onclick = () => {
+  const link = invitationUrl(new URL(location.href), snapshot?.code || room, inviteEntry || undefined);
+  void copy('invite', link, '复制邀请链接', '邀请链接复制成功！');
+};
 button('copyCode').onclick = () => { if (snapshot) void copy('copyCode', snapshot.code, '复制房间码', '房间码复制成功！'); };
 const leaveDialog = el('leaveDialog') as HTMLDialogElement;
 button('leave').onclick = () => { home(); notice('已离开房间，可以继续上次房间。'); };

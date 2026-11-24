@@ -2,11 +2,11 @@
 
 <p align="center"><a href="README.md">English</a> | 简体中文</p>
 
-<p align="center"><a href="https://ricky-d1gmj19kv6009dbce-1516945955.tcloudbaseapp.com/gomoku/">在线游玩</a> | <a href="#截图">截图</a> | <a href="https://github.com/REEEEEAAAAAL/cat-dog-gomoku">源代码</a></p>
+<p align="center"><a href="https://cat-dog-gomoku.us.ci/">在线游玩</a> | <a href="#截图">截图</a> | <a href="https://github.com/REEEEEAAAAAL/cat-dog-gomoku">源代码</a></p>
 
 一个为两个人设计的在线五子棋小游戏。选择猫猫或狗狗，分享邀请，在 15×15 棋盘上一起下一局。支持手机、平板与电脑，无需注册账号，游戏界面为简体中文。
 
-线上游戏使用有有效期与额度限制的 CloudBase 预付费环境，默认域名首次访问可能显示确认页面。
+线上游戏使用有有效期与额度限制的 CloudBase 预付费环境，默认域名首次访问可能显示确认页面。<a href="https://ricky-d1gmj19kv6009dbce-1516945955.tcloudbaseapp.com/gomoku/">CloudBase 备用入口</a>
 
 ## 功能
 
@@ -95,6 +95,8 @@ CloudBase SDK 可能触发 Vite 的大包提示，不影响构建成功。
 ## 部署
 
 使用 CloudBase PostgreSQL 环境及已登录的 CLI。将 `.env.example` 复制为 `.env.local`，填写环境 ID 和对应的 Publishable Key。前端构建和 `cloudbaserc.json` 均使用 `VITE_CLOUDBASE_ENV_ID` 指定目标。开通静态托管、启用匿名登录，并将 CloudBase 分配的托管域名加入安全域名。执行变更前核对目标及计费设置。
+
+正式版邀请链接使用游戏公开入口。独立部署时，在构建前把 `VITE_GOMOKU_INVITE_URL` 设为该部署的完整游戏入口，以便打开对应部署中的房间。本地开发和环回地址预览使用当前页面地址。公开入口以 302 跳转到 CloudBase，游戏页面和后续通信均由 CloudBase 提供。
 
 ```powershell
 $targetEnv = node --env-file=.env.local -p "process.env.VITE_CLOUDBASE_ENV_ID ?? ''"

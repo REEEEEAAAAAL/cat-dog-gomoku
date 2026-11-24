@@ -1,10 +1,12 @@
+import type { Phase } from './protocol';
+
 type RoomLayout = 'phone' | 'stacked' | 'wide';
 
-/** 房间 DOM 挂载后调用一次，安装页面生命周期内的布局监听，返回状态更新函数。 */
+/** 页面 DOM 挂载后安装布局监听，返回更新房间布局和共用状态栏位置的函数。 */
 export function setupRoomLayout() {
   const element = (id: string) => document.getElementById(id)!;
   const room = element('room');
-  // 移动同一批节点以保留事件和控件状态；注释锚点记录原位，切回手机布局时按原序复位。
+  // 移动同一批节点以保留事件和控件状态；注释锚点记录页面初始位置。
   const origins = new Map<HTMLElement, Comment>();
   const movable = ['turnBar', 'opponentPlayer', 'selfPlayer', 'interactionControls',
     'moveControls', 'undoPanel', 'rematchPanel', 'pendingPanel', 'applicationPanel',
@@ -24,11 +26,13 @@ export function setupRoomLayout() {
     const node = element(id), parent = element(target);
     if (node.parentElement !== parent) parent.appendChild(node);
   };
-  let phase = '';
+  let phase: Phase | '' = '';
+  let isHost = false;
   let previous = '';
   let artVisible = false;
   const rules = element('rules') as HTMLDetailsElement;
   const update = () => {
+    const focused = document.activeElement;
     const style = getComputedStyle(room);
     // 断点以 CSS 为唯一来源，JS 只按模式迁移节点，避免两套尺寸条件漂移。
     const mode = style.getPropertyValue('--room-layout').trim() as RoomLayout;
@@ -37,7 +41,6 @@ export function setupRoomLayout() {
     const key = mode;
     room.dataset.compact = String(compact);
     if (key !== previous) {
-      const focused = document.activeElement;
       for (const id of movable) restore(id);
       room.dataset.layout = mode;
       element('desktopActions').hidden = mode !== 'wide';
@@ -64,8 +67,14 @@ export function setupRoomLayout() {
         move('tabletFooter', 'roomAside');
       }
       if (mode !== 'phone') rules.open = false;
-      if (focused instanceof HTMLElement && focused !== document.body && focused.isConnected) focused.focus({ preventScroll: true });
       previous = key;
+    }
+    if (mode === 'phone') {
+      // 双方准备后才进入 running。在此之前，房主可在棋盘上方分享邀请并处理申请。
+      for (const id of ['applicationPanel', 'invitePanel']) {
+        if (isHost && phase === 'waiting') move(id, 'hostWaitingSlot');
+        else restore(id);
+      }
     }
     if (mode === 'wide') {
       const activity = element('asideActivity').getBoundingClientRect();
@@ -93,15 +102,23 @@ export function setupRoomLayout() {
       const card = element('selfPlayer').firstElementChild;
       if (card && element('chatToggle').parentElement !== card) card.appendChild(element('chatToggle'));
     }
-    const tabletActive = mode === 'stacked' && !room.hidden && !element('playArea').hidden;
+    const boardVisible = !room.hidden && !element('playArea').hidden;
+    const tabletActive = mode === 'stacked' && boardVisible;
     element('tabletFooter').hidden = !tabletActive;
     if (tabletActive) {
       move('connectionBar', 'tabletFooter'); move('leave', 'tabletFooter'); move('closeRoom', 'tabletFooter');
     } else {
       restore('leave');
-      if (mode === 'wide' && !room.hidden && !element('playArea').hidden) {
+      if (mode === 'wide' && boardVisible) {
         move('connectionBar', 'room'); move('closeRoom', 'room');
-      } else { restore('connectionBar'); restore('closeRoom'); }
+      } else {
+        restore('closeRoom');
+        if (room.hidden) restore('connectionBar');
+        else move('connectionBar', 'roomStatusSlot');
+      }
+    }
+    if (focused instanceof HTMLElement && focused !== document.body && focused !== document.activeElement && focused.isConnected) {
+      focused.focus({ preventScroll: true });
     }
     const dialog = element('negotiationDialog') as HTMLDialogElement;
     const negotiating = mode !== 'phone' && !room.hidden && !element('undoPanel').hidden;
@@ -123,5 +140,9 @@ export function setupRoomLayout() {
   });
   for (const id of ['board', 'asideActivity', 'asideTurn', 'asidePlayers', 'moveControls', 'undoPanel', 'rematchPanel', 'applicationPanel', 'lobbyPanel', 'invitePanel']) observer.observe(element(id));
   update();
-  return (nextPhase: string) => { phase = nextPhase; update(); };
+  return (nextPhase: Phase | '', nextIsHost = false) => {
+    phase = nextPhase;
+    isHost = nextIsHost;
+    update();
+  };
 }
